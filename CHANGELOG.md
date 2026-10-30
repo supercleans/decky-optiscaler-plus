@@ -7,6 +7,8 @@ Decky OptiScaler plugin this one grew out of, which bundled **OptiScaler
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-30
+
 ### Changed
 
 - **HLX DLSS is built only when asked.** The set-up shows **HLX DLSS 사용**,
