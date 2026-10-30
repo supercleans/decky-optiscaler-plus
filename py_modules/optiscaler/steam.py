@@ -280,6 +280,37 @@ def shortcut_entry(home, appid):
     return None, None
 
 
+def apps_launching_with(home, pattern):
+    """The app ids whose launch options Steam has on disk match ``pattern`` (a regex).
+
+    Steam games from every account's localconfig.vdf, shortcuts from
+    shortcuts.vdf. What the client changed this session may not be on disk yet.
+    """
+    found = set()
+    for config in _local_configs(home):
+        try:
+            data = parse_vdf(config.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        apps = data
+        for step in ("userlocalconfigstore", "software", "valve", "steam", "apps"):
+            apps = apps.get(step) if isinstance(apps, dict) else None
+        for appid, entry in (apps or {}).items():
+            if isinstance(entry, dict) and re.search(pattern, str(entry.get("launchoptions") or "")):
+                found.add(str(appid))
+    for path in _shortcut_files(home):
+        try:
+            entries = parse_binary_vdf(path.read_bytes()).get("shortcuts")
+        except (OSError, ValueError):
+            continue
+        for entry in (entries or {}).values() if isinstance(entries, dict) else []:
+            if isinstance(entry, dict) and re.search(pattern, str(entry.get("launchoptions") or "")):
+                appid = _shortcut_appid(entry)
+                if appid:
+                    found.add(appid)
+    return found
+
+
 def find_shortcut_by_appid(home, appid):
     """Locate a non-Steam game by the app id its library entry uses."""
     entry, _ = shortcut_entry(home, appid)

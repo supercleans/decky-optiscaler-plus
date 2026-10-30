@@ -4,6 +4,7 @@ import { resolveGame } from "../shortcuts";
 import type { Game, GameDetail, RunningGame } from "../types";
 import { useComponents } from "../hooks/useComponents";
 import { ComponentNotice, SetupPanel } from "./Components";
+import { FrameGenPanel } from "./FrameGenPanel";
 import { GamesList } from "./GamesList";
 import { PluginUpdateNotice } from "./PluginUpdateNotice";
 import { TabStrip } from "./TabStrip";
@@ -163,6 +164,14 @@ function NowPlayingTab({
           </PanelSectionRow>
         ) : null}
       </PanelSection>
+
+      {/* lsfg-vk's multiplier, flow scale and lighter model change while the
+          game runs, so they belong here, over it. */}
+      <FrameGenPanel
+        appid={String(runningGame.appid)}
+        name={detail?.name ?? runningGame.name}
+        compact
+      />
 
       {resolving ? <Centered>게임을 찾는 중…</Centered> : null}
 

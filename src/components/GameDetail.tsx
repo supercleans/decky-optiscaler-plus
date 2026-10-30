@@ -14,6 +14,7 @@ import type {
 import { Centered, Pill } from "./Common";
 import { DetailHeader } from "./DetailHeader";
 import { DropinPanel } from "./DropinPanel";
+import { FrameGenPanel } from "./FrameGenPanel";
 import { InstallPanel } from "./InstallPanel";
 import { MonitorTab } from "./MonitorTab";
 import { SetupChecklist } from "./SetupChecklist";
@@ -268,6 +269,8 @@ export function GameDetail({
                 onSelect={setPicked}
                 onRecheckHelixsr={() => void recheckHelixsr()}
               />
+              {/* On top of whichever upscaler: a Vulkan layer, not part of the install. */}
+              <FrameGenPanel appid={appid} name={detail.name} />
               {showDropin ? (
                 <DropinPanel
                   gamePath={detail.path}

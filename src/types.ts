@@ -98,7 +98,7 @@ export interface HelixsrStatus {
 
 /** One step of the plugin's set-up or of an update. */
 export interface JobStep {
-  key: "nightly" | "dropin" | "helixsr" | "hlx_dlss";
+  key: "nightly" | "dropin" | "helixsr" | "hlx_dlss" | "lsfgvk";
   label: string;
   state: "pending" | "running" | "done" | "failed" | "skipped";
   /** The build it got, why it failed, or why it was skipped. */
@@ -109,7 +109,7 @@ export interface JobStep {
 export interface JobStatus {
   running: boolean;
   kind: "setup" | "update" | null;
-  channel: Channel | null;
+  channel: Component | null;
   steps: JobStep[];
   error: string | null;
   ok: boolean | null;
@@ -140,14 +140,59 @@ export interface ComponentChannel {
   desktop_missing?: boolean;
 }
 
+/** The user's Lossless Scaling on Steam, which lsfg-vk's frame generation runs on. */
+export interface LosslessStatus {
+  installed: boolean;
+  /** The Steam branch picked; lsfg-vk needs "lsfg-vk". */
+  branch: string | null;
+  /** lsfg-vk.dll, which only that branch carries. */
+  dll: string | null;
+  ready: boolean;
+}
+
+/** lsfg-vk on this Deck. */
+export interface LsfgComponent {
+  installed: boolean;
+  /** Installed by this plugin; one put there otherwise (decky-lsfg-vk) is used as it is. */
+  by_plugin: boolean;
+  version: string | null;
+  latest: string | null;
+  update: boolean;
+  lossless: LosslessStatus;
+}
+
+/** A game's lsfg-vk profile, shared with decky-lsfg-vk. */
+export interface LsfgProfile {
+  name: string;
+  active_in: string[];
+  multiplier: number;
+  flow_scale: number;
+  performance_mode: boolean;
+  override_present_mode?: boolean;
+  preserve_swapchain_image_count?: boolean;
+}
+
+/** lsfg-vk for one game. */
+export interface FrameGeneration {
+  ok?: boolean;
+  error: string | null;
+  installed: boolean;
+  lossless: LosslessStatus;
+  profile: LsfgProfile | null;
+}
+
+/** Something Settings updates: a pinned channel, or lsfg-vk. */
+export type Component = Channel | "lsfgvk";
+
 /** Everything the plugin has downloaded, and whether it is set up. */
 export interface ComponentsStatus {
   setup_done: boolean;
   job: JobStatus;
   build: HlxBuildStatus;
   channels: Record<Channel, ComponentChannel>;
-  /** The channels with a newer build to update to. */
-  updates: Channel[];
+  lsfgvk: LsfgComponent;
+  /** What has a newer build to update to. */
+  updates: Component[];
   checked_at: number | null;
   update_error: string | null;
 }

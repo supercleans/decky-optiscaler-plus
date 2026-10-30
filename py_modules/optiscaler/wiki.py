@@ -241,7 +241,7 @@ def _http_get(url, timeout=12, binary=False, verified_only=False):
     raise last_error if last_error else urllib.error.URLError("no usable TLS context")
 
 
-def download(url, dest, timeout=90):
+def download(url, dest, timeout=90, verified_only=False):
     """Fetch a binary file to `dest`, via the same transport the wiki uses.
 
     It lives here, in the module about the compatibility list, because the
@@ -255,7 +255,7 @@ def download(url, dest, timeout=90):
     """
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    body = _http_get(url, timeout=timeout, binary=True)
+    body = _http_get(url, timeout=timeout, binary=True, verified_only=verified_only)
     if not body:
         raise ValueError(f"empty response from {url}")
     partial = dest.with_name(dest.name + ".part")

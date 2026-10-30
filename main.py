@@ -145,15 +145,25 @@ class Plugin:
     async def check_updates(self, force: bool = False) -> dict:
         return await self.service.check_updates(force)
 
-    async def start_setup(self, build_hlx_dlss: bool = False) -> dict:
-        """Download everything, and build HLX DLSS when the user asked and agreed to NVIDIA's licence."""
-        return await self.service.start_setup(build_hlx_dlss)
+    async def start_setup(self, build_hlx_dlss: bool = False, install_lsfgvk: bool = False) -> dict:
+        """Download everything; build HLX DLSS and install lsfg-vk when the user asked."""
+        return await self.service.start_setup(build_hlx_dlss, install_lsfgvk)
 
     async def update_component(self, channel: str) -> dict:
         return await self.service.update_component(channel)
 
     async def remove_downloads(self) -> dict:
         return await self.service.remove_downloads()
+
+    # -- frame generation (lsfg-vk) ----------------------------------------
+    async def get_frame_generation(self, appid: str) -> dict:
+        return await self.service.get_frame_generation(appid)
+
+    async def set_frame_generation(self, appid: str, name: str, settings: dict = None) -> dict:
+        return await self.service.set_frame_generation(appid, name, settings)
+
+    async def release_lsfg_wrapper(self, appid: str) -> dict:
+        return await self.service.release_lsfg_wrapper(appid)
 
     async def build_hlx_dlss(self) -> dict:
         """Build HLX DLSS with HelixSR's setup; the user agreed to NVIDIA's licence."""

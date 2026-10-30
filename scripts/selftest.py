@@ -3418,7 +3418,8 @@ def check_setup():
         check("the set-up runs once at a time", first["ok"] and not second["ok"], second)
         check("and downloads OptiScaler, both cyboman builds and HelixSR, and builds HLX DLSS when asked",
               after["setup_done"] and after["job"]["ok"]
-              and steps == {"nightly": "done", "dropin": "done", "helixsr": "done", "hlx_dlss": "done"}
+              and steps == {"nightly": "done", "dropin": "done", "helixsr": "done", "hlx_dlss": "done",
+                            "lsfgvk": "skipped"}
               and sorted(v for v, _ in calls["dropin"]) == ["4.1.2l-exact", "4.1.2l-lossy"]
               and calls["build"] == ["v3.2.1"], (steps, calls))
         channels = after["channels"]
@@ -3561,6 +3562,255 @@ def check_setup():
         check("but HelixSR's tools stay where HelixSR Desktop shares them", kept_tools.exists())
     finally:
         dropin.fetch, hlx.fetch_release, dropin.releases, hlx.releases = real
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def check_lsfgvk():
+    """lsfg-vk: its official build installed into ~/.local, and frame generation set per game.
+
+    The build server's latest release is the one installed, unmodified, and a
+    known release is checked against its pinned SHA-256. Lossless Scaling's
+    lsfg-vk branch and its DLL are found in the Steam libraries. A game's
+    frame generation is a profile in lsfg-vk's own configuration matched by its
+    Steam app id, written the way decky-lsfg-vk writes it, so the profiles that
+    plugin made stay and read the same. Removing the plugin's downloads takes
+    lsfg-vk only when the plugin put it there, and never the configuration.
+    """
+    print("\nlsfg-vk")
+    import io
+    import tarfile
+    import tomllib
+    from optiscaler import lsfgvk, wiki as wiki_mod
+    from optiscaler.constants import LSFG_PAYLOAD
+
+    root = Path(tempfile.mkdtemp(prefix="optiscaler-lsfg-"))
+
+    def build(version):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:xz") as bundle:
+            for name in ["bin/lsfg-vk-cli", *[n for n in LSFG_PAYLOAD if n != "bin/lsfg-vk-cli"]]:
+                data = f"{name} {version}".encode()
+                info = tarfile.TarInfo("./" + name)
+                info.size = len(data)
+                bundle.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    served = {}
+    index = ('<tr><td><a href="lsfg-vk-9.9.9.r3.gabc.tar.xz">&gt;&gt; Latest git version (9.9.9.r3) &lt;&lt;</a></td></tr>'
+             '<tr><td><a href="lsfg-vk-9.9.9.tar.xz">&gt;&gt; Latest release candidate (9.9.9) &lt;&lt;</a></td></tr>'
+             '<tr><td><a href="lsfg-vk-9.9.9.tar.xz">&gt;&gt; Latest release (9.9.9) &lt;&lt;</a></td></tr>')
+
+    def fake_get(url, timeout=12, binary=False, verified_only=False):
+        if not verified_only:
+            raise AssertionError("the build server is read over verified TLS only")
+        return index
+
+    def fake_download(url, dest, timeout=90, verified_only=False):
+        if not verified_only:
+            raise AssertionError("lsfg-vk is downloaded over verified TLS only")
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(served[url.rsplit("/", 1)[1]])
+        return dest
+
+    real = (wiki_mod._http_get, wiki_mod.download)
+    wiki_mod._http_get, wiki_mod.download = fake_get, fake_download
+    try:
+        home = root / "home"
+        check("the latest release is the one the build server names, not a candidate or a git build",
+              lsfgvk.releases() == [{"tag": "9.9.9", "version": "9.9.9",
+                                      "url": "https://builds.lsfg-vk.dev/lsfg-vk-9.9.9.tar.xz"}],
+              lsfgvk.releases())
+        served["lsfg-vk-2.0.0.tar.xz"] = build("2.0.0")
+        try:
+            lsfgvk.install(home, root / "cache", None, "2.0.0")
+            check("a known release that is not the official build is refused", False)
+        except ValueError:
+            check("a known release that is not the official build is refused",
+                  not lsfgvk.installed(home) and not list((root / "cache").glob("*.tar.xz")))
+        legacy = home / ".local/lib/liblsfg-vk.so"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_bytes(b"v1")
+        served["lsfg-vk-9.9.9.tar.xz"] = build("9.9.9")
+        version = lsfgvk.install(home, root / "cache", None)
+        layer = home / ".local/lib/liblsfg-vk-layer.so"
+        check("the latest one is unpacked into ~/.local as it came, and v1's layer goes",
+              version == "9.9.9" and lsfgvk.installed(home) and layer.read_bytes() == b"lib/liblsfg-vk-layer.so 9.9.9"
+              and (home / ".local/share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json").is_file()
+              and not legacy.exists() and not list((root / "cache").glob("*.tar.xz")))
+
+        # Lossless Scaling, in a Steam library.
+        library = home / ".local/share/Steam/steamapps"
+        (library / "common/Lossless Scaling").mkdir(parents=True)
+        manifest = library / "appmanifest_993090.acf"
+        manifest.write_text('"AppState"\n{\n "appid" "993090"\n}\n')
+        check("Lossless Scaling on its default branch is found, and not ready",
+              lsfgvk.lossless(home) == {"installed": True, "branch": "public", "dll": None, "ready": False},
+              lsfgvk.lossless(home))
+        manifest.write_text('"AppState"\n{\n "appid" "993090"\n "UserConfig"\n {\n  "BetaKey" "lsfg-vk"\n }\n}\n')
+        (library / "common/Lossless Scaling/lsfg-vk.dll").write_bytes(b"MZ")
+        ready = lsfgvk.lossless(home)
+        check("on the lsfg-vk branch with its DLL, it is ready", ready["ready"] and ready["dll"], ready)
+
+        # The configuration, as decky-lsfg-vk left it.
+        config = home / ".config/lsfg-vk/conf.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text('version = 2\n\n[global]\nallow_fp16 = true\n\n[[profile]]\nname = "Cyberpunk 2077"\n'
+                          'active_in = [ "1091500" ]\npacing_mode = "vsync"\nmultiplier = 1\nflow_scale = 0.8\n'
+                          'performance_mode = true\noverride_present_mode = true\n'
+                          'preserve_swapchain_image_count = false\n')
+        check("a profile decky-lsfg-vk made reads as that game's, whatever it allows",
+              lsfgvk.game_profile(home, "1091500")["multiplier"] == 1)
+        lsfgvk.set_game_profile(home, "1245620", "Cyberpunk 2077", {"multiplier": 3, "flow_scale": 0.5},
+                                dll=ready["dll"])
+        data = tomllib.loads(config.read_text())
+        names = {p["name"]: p for p in data["profile"]}
+        check("turning it on adds the game's profile by its app id, beside the other, named apart",
+              data["version"] == 2 and data["global"]["dll"] == ready["dll"]
+              and names["Cyberpunk 2077 (1245620)"]["active_in"] == ["1245620"]
+              and names["Cyberpunk 2077 (1245620)"]["multiplier"] == 3
+              and names["Cyberpunk 2077"]["active_in"] == ["1091500"], data)
+        lsfgvk.set_game_profile(home, "1245620", "ignored", {"performance_mode": True})
+        changed = lsfgvk.game_profile(home, "1245620")
+        check("changing it keeps its name and the rest of its settings",
+              changed["name"] == "Cyberpunk 2077 (1245620)" and changed["multiplier"] == 3
+              and changed["performance_mode"], changed)
+        before = config.read_text()
+        try:
+            lsfgvk.set_game_profile(home, "1245620", "x", {"multiplier": 9})
+            check("settings out of range are refused, the file left as it was", False)
+        except ValueError:
+            check("settings out of range are refused, the file left as it was", config.read_text() == before)
+        lsfgvk.set_game_profile(home, "1245620", "x", {"multiplier": 1})
+        check("a multiplier of 1 is frame generation off, kept as decky-lsfg-vk keeps it",
+              lsfgvk.game_profile(home, "1245620")["multiplier"] == 1)
+        lsfgvk.set_game_profile(home, "1245620", "x", None)
+        check("turning it off removes that profile only",
+              lsfgvk.game_profile(home, "1245620") is None and lsfgvk.game_profile(home, "1091500"))
+        config.write_text('version = "1"\n[game]\nexe = "x"\n')
+        check("a v1 configuration counts as none, as v2 cannot read it",
+              lsfgvk.read_config(home)["profiles"] == [])
+        config.write_text("version = 3\n")
+        try:
+            lsfgvk.set_game_profile(home, "1", "x", {"multiplier": 2})
+            check("a configuration of a newer version is not rewritten", False)
+        except ValueError:
+            check("a configuration of a newer version is not rewritten", config.read_text() == "version = 3\n")
+        config.unlink()
+
+        # decky-lsfg-vk's ~/.lsfg: a game set up here leaves it, its workarounds carried over.
+        wrapper = home / ".lsfg"
+        wrapper.write_text("#!/bin/sh\n# lsfg-vk-wrapper-format: 2\n\nexec \"$@\"\n")
+        state_file = home / ".config/lsfg-vk/workarounds.json"
+        state_file.write_text(json.dumps({"version": 2, "apps": {"1245620": {"state": {
+            "dxvkFrameRate": 30, "disableGamescopeWsi": True, "disableHdr": False,
+            "disableSteamdeckMode": True, "disableVkbasalt": False, "enableZink": False},
+            "command_token_added": True, "non_steam": False}}}))
+        localconfig = home / ".local/share/Steam/userdata/1/config/localconfig.vdf"
+        localconfig.parent.mkdir(parents=True)
+
+        def launching(apps):
+            body = "".join(f'"{a}"{{"LaunchOptions" "{o}"}}' for a, o in apps.items())
+            localconfig.write_text('"UserLocalConfigStore"{"Software"{"Valve"{"Steam"{"apps"{' + body + "}}}}}")
+
+        launching({"1245620": "~/.lsfg %command%", "1091500": "/home/deck/.lsfg %command%", "7": "mangohud %command%"})
+        from optiscaler import steam as steam_mod
+        check("the games still launching through ~/.lsfg are found",
+              steam_mod.apps_launching_with(home, r"(^|\s)(~|/home/[^/\s]+)/\.lsfg(\s|$)") == {"1245620", "1091500"})
+        kept = lsfgvk.release_wrapper(home, "1245620")
+        check("a game leaving it gets its workarounds, the wrapper kept while another game runs it",
+              kept["workarounds"]["dxvkFrameRate"] == 30 and not kept["removed"] and wrapper.is_file(), kept)
+        launching({"1245620": "~/.lsfg %command%", "7": "mangohud %command%"})
+        plugins = home / "homebrew/plugins/decky-lsfg-vk"
+        plugins.mkdir(parents=True)
+        (plugins / "plugin.json").write_text(json.dumps({"name": "Decky LSFG-VK"}))
+        kept = lsfgvk.release_wrapper(home, "1245620")
+        check("and kept while decky-lsfg-vk, which keeps it, is installed", not kept["removed"] and wrapper.is_file())
+        shutil.rmtree(home / "homebrew")
+        gone = lsfgvk.release_wrapper(home, "1245620")
+        check("the last game leaving it with decky-lsfg-vk gone takes the wrapper and its state with it",
+              gone["removed"] and not wrapper.exists() and not state_file.exists()
+              and gone["workarounds"]["disableSteamdeckMode"], gone)
+        wrapper.write_text("#!/bin/sh\nexec my-own-script \"$@\"\n")
+        check("a ~/.lsfg that is not decky-lsfg-vk's is never removed",
+              not lsfgvk.release_wrapper(home, "1245620")["removed"] and wrapper.is_file())
+        wrapper.unlink()
+
+        # Through the service: set up with it, its updates, a game's frame generation, removing it.
+        service = OptiScalerService(ROOT, root / "settings", root / "runtime", home, logging.getLogger("selftest"))
+        lsfgvk.uninstall(home)
+        check("uninstalling takes the layer's files", not lsfgvk.installed(home) and not layer.exists())
+
+        async def until_done(start):
+            started = await start
+            if service._job_task:
+                await service._job_task
+            return started, await service.get_components()
+
+        service.payload.ensure = lambda force=False, logger=None, tag=None: root
+        service.nightly.current = lambda: {"tag": "nightly-20990101", "version": "10"}
+        service.optipatcher.ensure = lambda force=False, logger=None: None
+        from optiscaler import dropin, hlx
+        real_dropin, real_release = dropin.fetch, hlx.fetch_release
+
+        def fake_dropin(cache_dir, logger=None, variant=None, tag=None):
+            path = Path(cache_dir) / "dll-1" / variant / "amd_fidelityfx_upscaler_dx12.dll"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"MZ")
+            return path, "dll-1"
+
+        def fake_release(cache_dir, logger=None, tag=None):
+            folder = Path(cache_dir) / "v3.2.0"
+            if not folder.exists():
+                helixsr_release(folder)
+            return folder, "v3.2.0"
+
+        dropin.fetch, hlx.fetch_release = fake_dropin, fake_release
+        try:
+            _, plain = asyncio.run(until_done(service.start_setup()))
+            check("left off at the set-up, lsfg-vk is not installed and its step says so",
+                  plain["setup_done"] and not plain["lsfgvk"]["installed"]
+                  and {s["key"]: s["state"] for s in plain["job"]["steps"]}["lsfgvk"] == "skipped",
+                  plain["job"]["steps"])
+            served["lsfg-vk-9.9.9.tar.xz"] = build("9.9.9")
+            _, withit = asyncio.run(until_done(service.start_setup(False, True)))
+            check("turned on, the set-up installs it, marked as the plugin's",
+                  withit["lsfgvk"]["installed"] and withit["lsfgvk"]["by_plugin"]
+                  and withit["lsfgvk"]["version"] == "9.9.9" and withit["lsfgvk"]["lossless"]["ready"],
+                  withit["lsfgvk"])
+        finally:
+            dropin.fetch, hlx.fetch_release = real_dropin, real_release
+
+        index = index.replace("9.9.9", "9.9.10")
+        served["lsfg-vk-9.9.10.tar.xz"] = build("9.9.10")
+        newer = asyncio.run(service.check_updates(True))
+        check("a newer release is said", "lsfgvk" in newer["updates"] and newer["lsfgvk"]["latest"] == "9.9.10",
+              newer["lsfgvk"])
+        _, updated = asyncio.run(until_done(service.update_component("lsfgvk")))
+        check("and updated from Settings", updated["lsfgvk"]["version"] == "9.9.10"
+              and not updated["lsfgvk"]["update"], updated["lsfgvk"])
+
+        on = asyncio.run(service.set_frame_generation("1245620", "ELDEN RING",
+                                                      {"multiplier": 2, "flow_scale": 0.8, "performance_mode": False}))
+        check("a game's frame generation is turned on through the service, with the DLL filled in",
+              on["ok"] and on["profile"]["name"] == "ELDEN RING"
+              and tomllib.loads(config.read_text())["global"]["dll"] == ready["dll"], on)
+        off = asyncio.run(service.set_frame_generation("1245620", "ELDEN RING", None))
+        check("and off", off["ok"] and off["profile"] is None, off)
+        refused = asyncio.run(service.set_frame_generation("", "Shortcut", {"multiplier": 2}))
+        check("a game without an app id is refused", not refused["ok"], refused)
+
+        removed = asyncio.run(service.remove_downloads())
+        check("removing the downloads takes the lsfg-vk the plugin installed, not its configuration",
+              removed["ok"] and not lsfgvk.installed(home) and config.is_file()
+              and not removed["components"]["lsfgvk"]["by_plugin"], removed["components"]["lsfgvk"])
+        lsfgvk.install(home, root / "cache", None, "9.9.10")
+        external = asyncio.run(service.get_components())["lsfgvk"]
+        asyncio.run(service.remove_downloads())
+        check("one installed some other way is used as it is: not offered updates, not removed",
+              external["installed"] and not external["by_plugin"] and not external["update"]
+              and lsfgvk.installed(home), external)
+    finally:
+        wiki_mod._http_get, wiki_mod.download = real
         shutil.rmtree(root, ignore_errors=True)
 
 
@@ -4151,6 +4401,7 @@ def main():
     check_hlx()
     check_hlx_build()
     check_setup()
+    check_lsfgvk()
     check_channel_versions()
     check_amd_dropin()
     check_pd_upscaler_games()

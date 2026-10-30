@@ -77,11 +77,16 @@ const setUp = {
                source: "plugin", desktop_version: null, desktop_root: null, dlss_ready: false,
                desktop_missing: false },
   },
+  lsfgvk: { installed: false, by_plugin: false, version: null, latest: null, update: false,
+            lossless: { installed: false, branch: null, dll: null, ready: false } },
   updates: [], checked_at: 1787000000, update_error: null,
 };
 
 Object.assign(fixtures, {
   get_components: setUp,
+  // lsfg-vk not installed until a test says otherwise.
+  get_frame_generation: { error: null, installed: false, profile: null,
+                          lossless: { installed: false, branch: null, dll: null, ready: false } },
   check_updates: () => fixtures.get_components,
   start_setup: () => ({ ok: true, components: fixtures.get_components }),
   update_component: () => ({ ok: true, components: fixtures.get_components }),
@@ -2167,6 +2172,168 @@ async function render(name: string, element: React.ReactElement) {
     // It is plugin-wide, so it must not turn up in the sidebar.
     console.log(`  the quick panel does not carry it: ${
       !findAll(qp.host, "[data-tab]").some((n) => n.getAttribute("data-tab") === "settings")}`);
+  }
+
+  // -- lsfg-vk: frame generation per game ---------------------------------------
+  {
+    const { withEnv, withoutEnv, mergeLaunchOptions } = await import("../src/launchOptions");
+    const { lsfgLaunchOptions, readWorkarounds, withoutLsfg, DEFAULT_WORKAROUNDS } = await import("../src/lsfgLaunch");
+    const { FrameGenPanel } = await import("../src/components/FrameGenPanel");
+    const { SetupPanel } = await import("../src/components/Components");
+    const key = "ENABLE_GAMESCOPE_WSI";
+    const rest = async (ms = 450) => {
+      await act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+      await settle();
+    };
+    console.log("\n=== lsfg-vk ===");
+    console.log(`  a variable goes before the command, beside what is there: ${
+      withEnv('WINEDLLOVERRIDES="dxgi=n,b" mangohud %command% -dx12', key, "0")
+        === 'ENABLE_GAMESCOPE_WSI=0 WINEDLLOVERRIDES="dxgi=n,b" mangohud %command% -dx12'
+      && withEnv("", key, "0") === "ENABLE_GAMESCOPE_WSI=0 %command%"
+      && withEnv("ENABLE_GAMESCOPE_WSI=1 %command%", key, "0") === "ENABLE_GAMESCOPE_WSI=0 %command%"
+      && withoutEnv("ENABLE_GAMESCOPE_WSI=0 %command%", key) === ""}`);
+    console.log(`  an OptiScaler install keeps them: ${
+      mergeLaunchOptions("ENABLE_GAMESCOPE_WSI=0 %command%", ["dxgi"])
+        === 'WINEDLLOVERRIDES="dxgi=n,b" ENABLE_GAMESCOPE_WSI=0 %command%'}`);
+    const every = { disableGamescopeWsi: true, disableHdr: true, disableSteamDeck: true, disableVkBasalt: true,
+                    zink: true, fpsCap: 40 };
+    const full = lsfgLaunchOptions('mangohud %command% -dx12', "Baldur's \"Gate\" 3", every);
+    console.log(`  every workaround is a plain variable, read back as it was set: ${
+      full === 'ENABLE_GAMESCOPE_WSI=0 DXVK_HDR=0 SteamDeck=0 DISABLE_VKBASALT=1 __GLX_VENDOR_LIBRARY_NAME=mesa '
+        + 'MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink DXVK_FRAME_RATE=40 '
+        + 'LSFGVK_PROFILE="Baldur\'s \\"Gate\\" 3" mangohud %command% -dx12'
+      && JSON.stringify(readWorkarounds(full)) === JSON.stringify(every)
+      && JSON.stringify(readWorkarounds("mangohud %command%"))
+        === JSON.stringify({ ...DEFAULT_WORKAROUNDS, disableGamescopeWsi: false, disableHdr: false })}`);
+    console.log(`  turning it off takes out what it put in and decky-lsfg-vk's wrapper, nothing else: ${
+      withoutLsfg(full) === "mangohud %command% -dx12"
+      && withoutLsfg("DXVK_HDR=1 ~/.lsfg mangohud %command%") === "DXVK_HDR=1 mangohud %command%"
+      && withoutLsfg("ENABLE_GAMESCOPE_WSI=0 /home/deck/.lsfg %command%") === ""}`);
+
+    const ready = { installed: true, branch: "lsfg-vk", dll: "/home/deck/LS/lsfg-vk.dll", ready: true };
+    const profileOf = (settings: any) => ({ name: "Cyberpunk 2077", active_in: ["1091500"], ...settings });
+    let stored: any = null;
+    const handed: unknown[][] = [];
+    fixtures.get_frame_generation = () => ({ error: null, installed: true, lossless: ready, profile: stored });
+    fixtures.set_frame_generation = (...args: unknown[]) => {
+      handed.push(args);
+      stored = args[2] ? profileOf(args[2]) : null;
+      return { ok: true, error: null, installed: true, lossless: ready, profile: stored };
+    };
+    const released: string[] = [];
+    fixtures.release_lsfg_wrapper = (appid: string) => {
+      released.push(appid);
+      return { removed: true, workarounds: { disableGamescopeWsi: true, disableHdr: false, disableSteamdeckMode: true,
+                                             disableVkbasalt: false, enableZink: false, dxvkFrameRate: 30 } };
+    };
+    const written: [number, string][] = [];
+    const savedClient = globalThis.SteamClient;
+    let options = "mangohud %command%";
+    globalThis.SteamClient = {
+      Apps: {
+        GetAppLaunchOptions: async () => options,
+        SetAppLaunchOptions: (id: number, value: string) => { written.push([id, value]); options = value; },
+      },
+    } as any;
+    const fg = await render("FrameGenPanel", <FrameGenPanel appid="1091500" name="Cyberpunk 2077" />);
+    const use = () => findAll(fg.host, '[data-mock="ToggleField"]').find((n) =>
+      n.getAttribute("data-label") === "lsfg-vk 사용")?.querySelector("[data-toggle]") as HTMLElement | null;
+    const press = async (selector: string) => {
+      await act(async () => { (findAll(fg.host, selector)[0] as HTMLElement | undefined)?.click(); });
+      await settle();
+    };
+    console.log(`  a game's lsfg-vk is a switch, off until turned on: ${
+      use()?.getAttribute("data-checked") === "false" && findAll(fg.host, "[data-lsfg]").length === 0}`);
+    await act(async () => { use()?.click(); });
+    await settle();
+    console.log(`  turning it on writes the game's profile with the defaults, and its launch options: ${
+      handed[0]?.[0] === "1091500" && handed[0]?.[1] === "Cyberpunk 2077"
+      && JSON.stringify(handed[0]?.[2]) === JSON.stringify({ multiplier: 2, flow_scale: 0.8, performance_mode: false,
+                                                             override_present_mode: true,
+                                                             preserve_swapchain_image_count: false })
+      && written[0]?.[0] === 1091500
+      && written[0]?.[1] === 'ENABLE_GAMESCOPE_WSI=0 DXVK_HDR=0 LSFGVK_PROFILE="Cyberpunk 2077" mangohud %command%'}`);
+    console.log(`  then decky-lsfg-vk's live controls are there, and the workarounds: ${
+      ["multiplier", "flow_scale", "fps_cap"].every((k) => findAll(fg.host, `[data-lsfg="${k}"]`).length === 1)
+      && ["성능 모드", "Present Mode 덮어쓰기", "Swapchain 이미지 수 유지"].every((l) =>
+        findAll(fg.host, `[data-mock="ToggleField"][data-label="${l}"]`).length === 1)
+      && findAll(fg.host, "[data-workaround]").length === 5}`);
+    await press('[data-lsfg="multiplier"] [data-slider-inc]');
+    console.log(`  a slider waits until it rests: ${handed.length === 1}`);
+    await rest();
+    console.log(`  then a change keeps the rest of the profile, and the launch options alone: ${
+      (handed[1]?.[2] as any)?.multiplier === 3 && (handed[1]?.[2] as any)?.override_present_mode === true
+      && written.length === 1}`);
+    await press('[data-lsfg="multiplier"] [data-slider-dec]');
+    await press('[data-lsfg="multiplier"] [data-slider-dec]');
+    await rest();
+    console.log(`  the multiplier goes down to off, live: ${
+      (handed.at(-1)?.[2] as any)?.multiplier === 1 && fg.host.textContent!.includes("배수 · 끔")}`);
+    await press('[data-workaround="disableVkBasalt"] [data-toggle]');
+    await press('[data-lsfg="fps_cap"] [data-slider-inc]');
+    await rest();
+    console.log(`  a workaround or the base FPS cap is a launch option: ${
+      options === 'ENABLE_GAMESCOPE_WSI=0 DXVK_HDR=0 DISABLE_VKBASALT=1 DXVK_FRAME_RATE=1 '
+        + 'LSFGVK_PROFILE="Cyberpunk 2077" mangohud %command%'}`);
+    await act(async () => { use()?.click(); });
+    await settle();
+    console.log(`  turning it off removes the profile and everything it put in the launch options: ${
+      handed.at(-1)?.[2] === null && options === "mangohud %command%"}`);
+
+    // A game decky-lsfg-vk's wrapper runs leaves it, its workarounds carried over.
+    options = "~/.lsfg %command%";
+    const moved = await render("FrameGenPanel (decky-lsfg-vk's wrapper)", <FrameGenPanel appid="1091500" name="Cyberpunk 2077" />);
+    await act(async () => {
+      (findAll(moved.host, '[data-mock="ToggleField"][data-label="lsfg-vk 사용"] [data-toggle]')[0] as HTMLElement)?.click();
+    });
+    await settle();
+    console.log(`  turning it on here takes ~/.lsfg out and carries its workarounds over: ${
+      released[0] === "1091500"
+      && options === 'ENABLE_GAMESCOPE_WSI=0 SteamDeck=0 DXVK_FRAME_RATE=30 LSFGVK_PROFILE="Cyberpunk 2077" %command%'}`);
+
+    // Over a running game, in the side panel: the live controls, no workarounds.
+    stored = profileOf({ multiplier: 2, flow_scale: 0.8, performance_mode: false });
+    const live = await render("QuickPanel (lsfg-vk live)",
+      <QuickPanel runningGame={{ appid: 1091500, name: "Cyberpunk 2077", gameid: "1091500" }}
+        onOpenManager={() => {}} />);
+    const liveHandedBefore = handed.length;
+    await act(async () => {
+      (findAll(live.host, '[data-lsfg="flow_scale"] [data-slider-inc]')[0] as HTMLElement | undefined)?.click();
+    });
+    await rest();
+    console.log(`  the side panel over a running game changes it live, saying on/off waits for a restart: ${
+      live.host.textContent!.includes("프레임 생성 (lsfg-vk)")
+      && live.host.textContent!.includes("다시 시작하면 적용")
+      && handed.length === liveHandedBefore + 1 && (handed.at(-1)?.[2] as any)?.flow_scale === 0.81
+      && findAll(live.host, "[data-workaround]").length === 0}`);
+    stored = null;
+
+    fixtures.get_frame_generation = () => ({ error: null, installed: true, profile: null,
+      lossless: { installed: true, branch: "public", dll: null, ready: false } });
+    const branch = await render("FrameGenPanel (default branch)", <FrameGenPanel appid="1091500" name="x" />);
+    console.log(`  Lossless Scaling on the wrong branch is said, with where to change it: ${
+      branch.host.textContent!.includes("public 브랜치") && branch.host.textContent!.includes("lsfg-vk 브랜치로 바꾸세요")}`);
+    fixtures.get_frame_generation = () => ({ error: null, installed: false, profile: null,
+      lossless: { installed: false, branch: null, dll: null, ready: false } });
+    const none = await render("FrameGenPanel (not installed)", <FrameGenPanel appid="1091500" name="x" />);
+    console.log(`  without lsfg-vk it points to Settings: ${
+      none.host.textContent!.includes("lsfg-vk가 설치되어 있지 않습니다")
+      && findAll(none.host, '[data-mock="ToggleField"]').length === 0}`);
+    globalThis.SteamClient = savedClient;
+
+    // The set-up offers it, off; Settings installs it.
+    await act(async () => { publishComponents({ ...setUp, setup_done: false } as any); });
+    const setupPanel = await render("SetupPanel (lsfg-vk)", <SetupPanel />);
+    const lsfgToggle = findAll(setupPanel.host, '[data-mock="ToggleField"]').find((n) =>
+      n.getAttribute("data-label") === "lsfg-vk 사용 (프레임 생성)");
+    console.log(`  the set-up offers lsfg-vk, off unless turned on: ${
+      lsfgToggle?.querySelector("[data-toggle]")?.getAttribute("data-checked") === "false"}`);
+    await act(async () => { publishComponents(setUp as any); });
+    await settle();
+    const lsfgSection = await render("ComponentsSection (lsfg-vk)", <ComponentsSection />);
+    console.log(`  Settings shows lsfg-vk and Lossless Scaling, and installs it: ${
+      findAll(lsfgSection.host, '[data-component="lsfgvk"]')[0]?.textContent!.includes("설치 안 됨")
+      && findAll(lsfgSection.host, '[data-mock="ButtonItem"]').some((n) => n.textContent === "lsfg-vk 설치")}`);
   }
 
   console.log("\n=== backend calls made ===");

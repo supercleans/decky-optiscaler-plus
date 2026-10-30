@@ -110,6 +110,27 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
       HelixSR가 나오면 알려만 주고, 업데이트는 HelixSR Desktop에서 합니다. 쓰던 HelixSR Desktop의
       HelixSR가 없어지면 알려 주고, 설정에서 플러그인으로 HelixSR를 설치할 수 있습니다.
   - HelixSR Desktop이 직접 설치한 게임은 건드리지 않습니다.
+- **lsfg-vk로 프레임 생성.** [lsfg-vk](https://lsfg-vk.dev)는 Lossless Scaling의 프레임 생성을 Vulkan
+  레이어로 돌려, Proton이 실행하는 모든 게임에서 위의 업스케일러와 함께 쓸 수 있습니다.
+  - 공식 빌드(`builds.lsfg-vk.dev`)를 받아 수정 없이 `~/.local`에 설치합니다(처음 설치의 선택 항목이거나
+    설정에서 설치). 빌드 서버의 새 릴리스를 알려 주고 업데이트합니다.
+  - 게임 화면에서 게임마다 **lsfg-vk 사용**을 켜면 lsfg-vk 설정 파일(`~/.config/lsfg-vk/conf.toml`)에 그
+    게임의 Steam 앱 ID로 프로필을 만들고, 실행 옵션에 그 프로필을 지정하는 `LSFGVK_PROFILE`과
+    워크어라운드를 넣습니다(Steam 외 바로가기 게임에서도 프로필이 확실히 쓰이도록). 끄면 넣은 것만 뺍니다.
+    켜고 끄기는 다시 시작하면 적용됩니다.
+  - decky-lsfg-vk의 실행 중 조절을 모두 담았습니다. **배수**(끔·2~6배), **Flow Scale**(25~100%),
+    **성능 모드**, **Present Mode 덮어쓰기**, **Swapchain 이미지 수 유지**는 게임 중에 바로 바뀌고, 사이드
+    패널의 실행 중 탭에서도 바꿀 수 있습니다. 배수를 끔으로 내리면 게임 중에 프레임 생성만 끕니다.
+  - 워크어라운드(다음 실행부터): 기본 FPS 상한(`DXVK_FRAME_RATE`), Gamescope WSI 끄기(게임 모드에 필요,
+    기본 켜짐), HDR 끄기(기본 켜짐), Steam Deck 모드 끄기, vkBasalt 끄기, Zink(OpenGL 게임). decky-lsfg-vk의
+    `~/.lsfg` 래퍼 없이 실행 옵션의 변수로 넣습니다.
+  - decky-lsfg-vk의 `~/.lsfg`로 실행되던 게임을 여기서 켜면, 실행 옵션에서 `~/.lsfg`를 빼고 그 게임의
+    워크어라운드를 옮겨 옵니다. `~/.lsfg` 파일은 그것을 쓰는 게임이 더 없고 decky-lsfg-vk가 설치돼 있지
+    않을 때 지웁니다(쓰는 게임이 남아 있는데 지우면 그 게임이 실행되지 않으므로).
+  - decky-lsfg-vk와 같은 방식으로 프로필을 쓰므로 함께 써도 서로의 설정이 보이고 지워지지 않습니다.
+    decky-lsfg-vk 등으로 이미 설치된 lsfg-vk는 그대로 쓰고, 업데이트나 삭제는 하지 않습니다.
+  - Steam에서 **Lossless Scaling을 사서 lsfg-vk 브랜치**(속성 → 게임 버전 및 베타)로 설치해 두어야
+    동작합니다. 브랜치와 `lsfg-vk.dll`이 준비됐는지 게임 화면과 설정에서 알려 줍니다.
 - **REFramework도 자동으로 받습니다.** 위키 항목이 REFramework를 요구하는 RE 엔진 게임에는 praydog의
   nightly 빌드나 게임별 pd-upscaler 빌드를 받아 GitHub의 digest로 검증한 뒤 설치합니다.
   pd-upscaler 게임(레지던트 이블 2·3·4·7·8, 데빌 메이 크라이 5)에 필요한 `PDPerfPlugin.dll`은 저작권
@@ -137,8 +158,8 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
 **처음 설치 화면** (설치 전에만)
 
 - 사이드 패널과 전체 화면 모두 **설치** 버튼만 보입니다. 누르면 동의 창 뒤에 OptiScaler nightly,
-  cyboman FSR 4.1.2 Lite(BC-250은 건너뜀), HelixSR를 받습니다. **HLX DLSS 사용**을 켰을 때만(기본
-  꺼짐) HLX DLSS도 빌드합니다.
+  cyboman FSR 4.1.2 Lite(BC-250은 건너뜀), HelixSR를 받습니다. **HLX DLSS 사용**과 **lsfg-vk 사용**을
+  켰을 때만(둘 다 기본 꺼짐) HLX DLSS를 빌드하고 lsfg-vk를 설치합니다.
 - 단계마다 대기·진행 중·완료·실패·건너뜀이 표시되고, HLX DLSS 빌드는 진행률(%)도 보입니다. 실패하면
   사유와 **다시 시도**가 나옵니다.
 
@@ -146,7 +167,9 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
 
 - 맨 위: 플러그인 업데이트, 새 빌드, HelixSR Desktop의 HelixSR가 없어졌다는 알림.
 - **실행 중**: 실행 중인 게임에 OptiScaler가 설치돼 있는지와 업스케일러, 그 게임의 상세 화면으로 가는
-  버튼. 설정은 게임 안의 OptiScaler 오버레이에서 바꿉니다.
+  버튼. OptiScaler 설정은 게임 안의 OptiScaler 오버레이에서 바꿉니다. **프레임 생성 (lsfg-vk)**의
+  배수(끔·2~6배)·Flow Scale·성능 모드·Present Mode·Swapchain 설정을 게임 중에 바로 바꿀 수 있습니다(켜고
+  끄기는 다시 시작하면 적용).
 - **게임**: 한 화면에 4개씩 보이는 게임 목록, **라이브러리 및 설정** 버튼.
 
 **전체 화면**
@@ -163,7 +186,8 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
     설치합니다(파일 이름·설정·업스케일러 유지, 실행 중인 게임은 건너뜀). OptiPatcher 버전, 기본 프록시.
   - **받은 파일**: OptiScaler, cyboman, HelixSR의 설치 버전·고정 여부·새 빌드·HLX DLSS 빌드 여부.
     구성 요소별 업데이트, 새 빌드 확인, 받은 파일 모두 지우기. HelixSR Desktop의 HelixSR는 업데이트를
-    안내만 하고, 없어지면 **플러그인으로 HelixSR 설치**를 보여 줍니다.
+    안내만 하고, 없어지면 **플러그인으로 HelixSR 설치**를 보여 줍니다. lsfg-vk의 설치 여부·버전과
+    Lossless Scaling 브랜치 상태, **lsfg-vk 설치**·업데이트도 여기 있습니다.
   - **다운로드 버전**: 세 채널을 각각 특정 버전으로 고정합니다. 고정한 채널은 새 빌드를 알리지 않습니다.
   - **HelixSR (HLX DLSS)**: HLX DLSS 준비 여부와 출처(HelixSR Desktop / 플러그인). 준비되지 않았으면
     **HLX DLSS 빌드**(동의 창, 진행률, 취소).
@@ -174,6 +198,10 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
 - **업스케일러**: FSR 4 Lite, FSR 4.1.2 Lite exact·lossy, HLX FSR 4, HLX DLSS 중 선택. 항목마다 설명과
   넣는 방식(드롭인 / OptiScaler / HelixSR Scaler), 적용됨·추천·간단·불가 표시. BC-250에서는 HLX 두
   가지만 보입니다. HLX DLSS가 없으면 그 자리에서 빌드할 수 있습니다.
+- **프레임 생성 (lsfg-vk)**: 사용 켜기·끄기, 실행 중 조절(배수 끔·2~6배, Flow Scale, 성능 모드, Present
+  Mode 덮어쓰기, Swapchain 이미지 수 유지), 워크어라운드(기본 FPS 상한, Gamescope WSI·HDR·Steam Deck
+  모드·vkBasalt 끄기, Zink). 업스케일러와 상관없이
+  쓸 수 있습니다. lsfg-vk가 없거나 Lossless Scaling이 lsfg-vk 브랜치가 아니면 그렇다고 알려 줍니다.
 - **FSR 드롭인**(FSR 3.1이 있는 게임): 게임의 FSR DLL을 고른 빌드로 바꾸고 원본은 백업합니다. 제거하면
   원래대로 돌아가고, 게임 업데이트로 원본이 돌아오면 알려 줍니다.
 - **설치 체크리스트**(OptiScaler 방식)
@@ -220,6 +248,9 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
   전에 NVIDIA 라이선스 동의를 받고, 몇 분 이상 걸리며 Proton이 필요합니다. 꺼 두고 설치해도 설정의
   **HLX DLSS 빌드**나 업스케일러 목록에서 언제든 빌드할 수 있습니다.
 
+- lsfg-vk: **lsfg-vk 사용**을 켰을 때만(기본 꺼짐) 공식 빌드를 받아 설치합니다. 이미 설치돼 있으면
+  선택이 나오지 않습니다. 꺼 두고 설치해도 설정에서 언제든 설치할 수 있습니다.
+
 HelixSR Desktop으로 설정한 HelixSR가 있으면 HelixSR는 받지도 빌드하지도 않고 그것을 씁니다(이때는
 HLX DLSS 선택이 나오지 않음).
 
@@ -229,13 +260,14 @@ HLX DLSS 선택이 나오지 않음).
 
 ### 업데이트와 지우기
 
-OptiScaler nightly, cyboman 빌드, HelixSR에 새 빌드가 나오면 메인 화면에 알려 줍니다(몇 시간마다
+OptiScaler nightly, cyboman 빌드, HelixSR, 이 플러그인이 설치한 lsfg-vk에 새 빌드가 나오면 메인 화면에 알려 줍니다(몇 시간마다
 확인). **설정 → 받은 파일**에서 각각 업데이트하고, **새 빌드 확인**으로 바로 확인할 수 있습니다.
 HLX DLSS를 빌드해 쓰고 있으면 HelixSR를 업데이트할 때 새 릴리스에서 다시 빌드합니다. 이미 설치한
 게임은 설정의 **게임 업데이트**로 새 빌드를 넣습니다.
 
 **받은 파일 모두 지우기**는 플러그인이 받은 파일(OptiScaler, cyboman, HelixSR, OptiPatcher,
-REFramework)을 모두 지우고 처음 설치 화면으로 돌아갑니다. 게임에 설치한 파일은 그대로 둡니다.
+REFramework, 이 플러그인이 설치한 lsfg-vk)을 모두 지우고 처음 설치 화면으로 돌아갑니다. 게임에 설치한
+파일과 lsfg-vk 설정 파일은 그대로 둡니다.
 HelixSR Desktop이 없으면 HelixSR 설정 도구(`~/.local/share/HelixSR`)도 지웁니다.
 
 **설정 → 다운로드 버전**에서 OptiScaler nightly, cyboman 빌드, HelixSR 릴리스를 각각 특정 버전으로
@@ -273,6 +305,7 @@ WINEDLLOVERRIDES="dxgi=n,b" %command%
 - Decky Loader
 - 처음 설치와 업데이트 때 인터넷 연결
 - HLX DLSS를 플러그인으로 빌드하려면 Steam의 Proton
+- lsfg-vk 프레임 생성에는 Steam의 Lossless Scaling(유료)을 lsfg-vk 브랜치로 설치해 두어야 함
 - 압축 해제용 `7z`, `7zz`, `7za`, `7zr`, `bsdtar` 중 하나. SteamOS에는 p7zip과 bsdtar가 모두 있습니다.
 
 ## 빌드
@@ -334,6 +367,11 @@ nightly·cyboman·HelixSR 빌드를 `defaults/channel-baseline.json`에 적고, 
   [HelixSR Scaler](https://github.com/lonewolf0622/HelixSR-Scaler) (GPL-3.0). 포함하지 않습니다. HLX FSR
   4는 공식 릴리스에서 내려받아 수정 없이 쓰고, HLX DLSS는 HelixSR Desktop의 빌드나, 받아 둔 릴리스에서
   HelixSR 공식 설정 스크립트를 수정 없이 실행해 이 기기에서 만든 빌드를 게임에 복사합니다.
+- [lsfg-vk](https://lsfg-vk.dev) (PancakeTAS, CC BY-NC-ND 4.0). 포함하지 않으며, 공식 빌드를 받아
+  수정 없이 설치합니다. 프레임 생성은 사용자의 [Lossless Scaling](https://store.steampowered.com/app/993090/)을
+  씁니다.
+- [decky-lsfg-vk](https://github.com/xXJSONDeruloXx/decky-lsfg-vk) (BSD-3) — lsfg-vk의 설치 위치와 게임별
+  프로필 규칙을 맞춰 함께 쓸 수 있게 참고했습니다.
 - [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT), 휴대폰 전송용 QR 코드.
 
 ## AI 사용 고지

@@ -3,7 +3,9 @@ import type {
   AutoPlanResult,
   Channel,
   ChannelVersions,
+  Component,
   ComponentsStatus,
+  FrameGeneration,
   DropinStatus,
   Fsr4Status,
   Game,
@@ -170,9 +172,30 @@ export const getComponents = callable<[], ComponentsStatus>("get_components");
 /** The same, after asking the channels for newer builds (every few hours, or now with force). */
 export const checkUpdates = callable<[force?: boolean], ComponentsStatus>("check_updates");
 type JobStart = { ok: boolean; error?: string; components?: ComponentsStatus };
-/** Download everything; build HLX DLSS too when asked, once the user agreed to NVIDIA's licence. */
-export const startSetup = callable<[buildHlxDlss?: boolean], JobStart>("start_setup");
-export const updateComponent = callable<[channel: Channel], JobStart>("update_component");
+/** Download everything; build HLX DLSS and install lsfg-vk too when asked. */
+export const startSetup = callable<[buildHlxDlss?: boolean, installLsfgvk?: boolean], JobStart>(
+  "start_setup"
+);
+export const updateComponent = callable<[component: Component], JobStart>("update_component");
+/** lsfg-vk for one game: installed, Lossless Scaling's state, its profile. */
+export const getFrameGeneration = callable<[appid: string], FrameGeneration>("get_frame_generation");
+/** Turn lsfg-vk on for a game with these settings, or off with null. */
+export const setFrameGeneration = callable<
+  [appid: string, name: string, settings: Partial<LsfgSettings> | null],
+  FrameGeneration
+>("set_frame_generation");
+export type LsfgSettings = {
+  multiplier: number;
+  flow_scale: number;
+  performance_mode: boolean;
+  override_present_mode: boolean;
+  preserve_swapchain_image_count: boolean;
+};
+/** A game leaves decky-lsfg-vk's ~/.lsfg: its workarounds there, and whether the wrapper itself went. */
+export const releaseLsfgWrapper = callable<
+  [appid: string],
+  { workarounds: Record<string, unknown> | null; removed: boolean }
+>("release_lsfg_wrapper");
 /** Remove everything downloaded; games keep what is installed in them. */
 export const removeDownloads = callable<[], JobStart>("remove_downloads");
 export const getChannelVersions = callable<[channel: Channel], ChannelVersions>(

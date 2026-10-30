@@ -154,6 +154,27 @@ export function mergeLaunchOptions(
   return `${overridesAssignment(merged)} ${command}`.replace(/\s+/g, " ").trim();
 }
 
+/** A `KEY=value` assignment as a whole word, whatever its quoting. */
+function assignment(key: string): RegExp {
+  return new RegExp(`(^|\\s)${key}=(?:"(?:[^"\\\\]|\\\\.)*"|'[^']*'|\\S*)(?=\\s|$)`, "g");
+}
+
+/**
+ * Launch options with `KEY=value` set before the command, replacing any value
+ * the key had and keeping everything else (overrides, wrappers, arguments).
+ */
+export function withEnv(current: string | null, key: string, value: string): string {
+  const rest = withoutEnv(current ?? "", key);
+  const command = /%command%/i.test(rest) ? rest : rest ? `%command% ${rest}` : "%command%";
+  return `${key}=${value} ${command}`.replace(/\s+/g, " ").trim();
+}
+
+/** Launch options with every `KEY=...` taken out; a bare `%command%` left collapses to none. */
+export function withoutEnv(options: string, key: string): string {
+  const out = options.replace(assignment(key), " ").replace(/\s+/g, " ").trim();
+  return out === "%command%" ? "" : out;
+}
+
 /**
  * The same launch options with our overrides taken out and nothing else.
  *

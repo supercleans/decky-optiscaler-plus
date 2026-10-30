@@ -11,7 +11,15 @@ import { toaster } from "@decky/api";
 import { useState } from "react";
 import { removeDownloads, startSetup, updateComponent } from "../api";
 import { publishComponents, useComponents } from "../hooks/useComponents";
-import type { Channel, ComponentChannel, HlxBuildStatus, JobStatus, JobStep } from "../types";
+import type {
+  Channel,
+  Component,
+  ComponentChannel,
+  HlxBuildStatus,
+  JobStatus,
+  JobStep,
+  LsfgComponent,
+} from "../types";
 import { Centered, KeyValue, Mono, Notice, Pill } from "./Common";
 import { HlxBuildConsent } from "./UpscalerPanel";
 
@@ -33,9 +41,10 @@ const STEP_LABEL: Record<JobStep["state"], string> = {
 function SetupConsent({
   desktop,
   dlss,
+  lsfg,
   closeModal,
   onOK,
-}: Readonly<{ desktop: boolean; dlss: boolean; closeModal?: () => void; onOK: () => void }>) {
+}: Readonly<{ desktop: boolean; dlss: boolean; lsfg: boolean; closeModal?: () => void; onOK: () => void }>) {
   return (
     <ConfirmModal
       strTitle="필요한 파일을 설치할까요?"
@@ -55,6 +64,12 @@ function SetupConsent({
             DLSS DLL(<Mono>nvngx_dlss.dll</Mono>)을 NVIDIA GitHub에서 받아 한 번 쓰고 지웁니다. 이 DLL과
             빌드 결과는 NVIDIA의 것으로 NVIDIA 라이선스(<Mono>github.com/NVIDIA/DLSS</Mono>)를 따르며,
             이 기기에서만 쓰고 공유하면 안 됩니다. 빌드에는 몇 분 이상 걸리고 Proton이 필요합니다.{" "}
+          </>
+        ) : null}
+        {lsfg ? (
+          <>
+            lsfg-vk 공식 빌드(<Mono>builds.lsfg-vk.dev</Mono>, CC BY-NC-ND 4.0)를 받아 수정 없이{" "}
+            <Mono>~/.local</Mono>에 설치합니다.{" "}
           </>
         ) : null}
         수백 MB를 받으며, 이 화면을 닫아도 설치는 계속됩니다.
@@ -104,7 +119,10 @@ export function SetupPanel() {
   const [starting, setStarting] = useState(false);
   // HLX DLSS is built only when asked: it takes NVIDIA's DLL, Proton and minutes.
   const [dlss, setDlss] = useState(false);
+  // lsfg-vk likewise: it needs Lossless Scaling bought on Steam to do anything.
+  const [lsfg, setLsfg] = useState(false);
   if (!components) return <Centered>확인 중…</Centered>;
+  const lsfgThere = components.lsfgvk.installed;
   const job = components.job;
   const settingUp = job.running && job.kind === "setup";
   const failed = !job.running && job.kind === "setup" && Boolean(job.error);
@@ -113,7 +131,7 @@ export function SetupPanel() {
   const begin = async () => {
     setStarting(true);
     try {
-      const result = await startSetup(dlss && !desktop);
+      const result = await startSetup(dlss && !desktop, lsfg && !lsfgThere);
       if (!result.ok) toaster.toast({ title: "설치를 시작하지 못했습니다", body: String(result.error) });
       publishComponents(result.components);
     } catch (exc) {
@@ -147,6 +165,22 @@ export function SetupPanel() {
           />
         </PanelSectionRow>
       ) : null}
+      {!lsfgThere ? (
+        <PanelSectionRow>
+          <ToggleField
+            label="lsfg-vk 사용 (프레임 생성)"
+            description={
+              "Lossless Scaling의 프레임 생성을 게임별로 켤 수 있게 lsfg-vk 공식 빌드를 설치합니다. Steam에서 " +
+              "Lossless Scaling을 사서 lsfg-vk 브랜치로 설치해 두어야 동작합니다. 끄고 설치해도 설정에서 " +
+              "언제든 설치할 수 있습니다."
+            }
+            checked={lsfg}
+            disabled={settingUp || starting}
+            bottomSeparator="standard"
+            onChange={setLsfg}
+          />
+        </PanelSectionRow>
+      ) : null}
       {job.kind === "setup" ? <JobSteps job={job} build={components.build} /> : null}
       {failed ? (
         <PanelSectionRow>
@@ -160,7 +194,14 @@ export function SetupPanel() {
           layout="below"
           disabled={settingUp || starting}
           onClick={() =>
-            showModal(<SetupConsent desktop={desktop} dlss={dlss && !desktop} onOK={() => void begin()} />)
+            showModal(
+              <SetupConsent
+                desktop={desktop}
+                dlss={dlss && !desktop}
+                lsfg={lsfg && !lsfgThere}
+                onOK={() => void begin()}
+              />
+            )
           }
         >
           {settingUp ? "설치 중…" : failed ? "다시 시도" : "설치"}
@@ -171,9 +212,34 @@ export function SetupPanel() {
 }
 
 /** "HelixSR 3.2.1 (HelixSR Desktop에서 업데이트)", for the notice. */
-function describeUpdate(channel: Channel, entry: ComponentChannel) {
-  const desktop = channel === "helixsr" && entry.source === "desktop";
-  return `${CHANNEL_LABEL[channel]} ${entry.latest ?? ""}${desktop ? " (HelixSR Desktop에서 업데이트)" : ""}`;
+function describeUpdate(component: Component, channels: Record<Channel, ComponentChannel>, lsfg: LsfgComponent) {
+  if (component === "lsfgvk") return `lsfg-vk ${lsfg.latest ?? ""}`;
+  const entry = channels[component];
+  const desktop = component === "helixsr" && entry.source === "desktop";
+  return `${CHANNEL_LABEL[component]} ${entry.latest ?? ""}${desktop ? " (HelixSR Desktop에서 업데이트)" : ""}`;
+}
+
+/** lsfg-vk on this Deck, and Lossless Scaling's state for it, in a sentence. */
+function describeLsfg(lsfg: LsfgComponent) {
+  const parts = [
+    !lsfg.installed
+      ? "설치 안 됨"
+      : lsfg.by_plugin
+        ? `${lsfg.version ?? "?"} (이 플러그인이 설치)`
+        : "다른 곳에서 설치됨 (decky-lsfg-vk 등)",
+  ];
+  const lossless = lsfg.lossless;
+  parts.push(
+    !lossless.installed
+      ? "Lossless Scaling 없음"
+      : lossless.ready
+        ? "Lossless Scaling lsfg-vk 브랜치 준비됨"
+        : lossless.branch !== "lsfg-vk"
+          ? `Lossless Scaling이 ${lossless.branch} 브랜치 (lsfg-vk 브랜치 필요)`
+          : "lsfg-vk.dll이 아직 없음"
+  );
+  if (lsfg.update) parts.push(`새 빌드 ${lsfg.latest}`);
+  return parts.join(" · ");
 }
 
 /**
@@ -193,7 +259,7 @@ export function ComponentNotice() {
       {updates.length > 0 ? (
         <PanelSectionRow>
           <Notice tone="info" title="새 빌드가 있습니다">
-            {updates.map((c) => describeUpdate(c, channels[c])).join(", ")}.
+            {updates.map((c) => describeUpdate(c, channels, components.lsfgvk)).join(", ")}.
             {inSettings ? " 설정 탭에서 업데이트하세요." : ""}
           </Notice>
         </PanelSectionRow>
@@ -237,7 +303,7 @@ export function ComponentsSection() {
   if (!components) return null;
   const { channels, job } = components;
 
-  const run = async (channel: Channel) => {
+  const run = async (channel: Component) => {
     setWorking(true);
     try {
       const result = await updateComponent(channel);
@@ -277,8 +343,9 @@ export function ComponentsSection() {
         }
       >
         <div style={{ fontSize: "14px", lineHeight: 1.5 }}>
-          OptiScaler, cyboman 빌드, HelixSR(빌드한 HLX DLSS 포함), OptiPatcher, REFramework 등 이
-          플러그인이 받은 파일을 모두 지웁니다. 게임에 설치한 파일은 그대로 둡니다. HelixSR Desktop이
+          OptiScaler, cyboman 빌드, HelixSR(빌드한 HLX DLSS 포함), OptiPatcher, REFramework, 이
+          플러그인이 설치한 lsfg-vk 등 받은 파일을 모두 지웁니다. 게임에 설치한 파일과 lsfg-vk 설정은
+          그대로 둡니다. HelixSR Desktop이
           없으면 HelixSR 설정 도구(<Mono>~/.local/share/HelixSR</Mono>)도 지웁니다. 지운 뒤에는 처음
           설치부터 다시 해야 합니다.
         </div>
@@ -337,6 +404,28 @@ export function ComponentsSection() {
           </div>
         );
       })}
+      <PanelSectionRow>
+        <Field
+          label="lsfg-vk (프레임 생성)"
+          description={describeLsfg(components.lsfgvk)}
+          focusable
+          bottomSeparator="standard"
+          childrenLayout="inline"
+          childrenContainerWidth="min"
+          {...({ "data-component": "lsfgvk" } as Record<string, string>)}
+        >
+          {components.lsfgvk.update ? <Pill color="#3a6ea5">새 빌드</Pill> : null}
+        </Field>
+      </PanelSectionRow>
+      {!components.lsfgvk.installed || components.lsfgvk.update ? (
+        <PanelSectionRow>
+          <ButtonItem layout="below" disabled={busy || working} onClick={() => void run("lsfgvk")}>
+            {components.lsfgvk.installed
+              ? `lsfg-vk 업데이트 (${components.lsfgvk.latest})`
+              : "lsfg-vk 설치"}
+          </ButtonItem>
+        </PanelSectionRow>
+      ) : null}
       {updating ? <JobSteps job={job} build={components.build} /> : null}
       {job.kind === "update" && !job.running && job.error ? (
         <PanelSectionRow>

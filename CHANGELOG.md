@@ -7,6 +7,41 @@ Decky OptiScaler plugin this one grew out of, which bundled **OptiScaler
 
 ## [Unreleased]
 
+### Added
+
+- **lsfg-vk's controls as decky-lsfg-vk has them, without its wrapper.** The
+  multiplier is a slider from off (1) to 6x and the flow scale one from 25 to
+  100%, beside the lighter model, Present Mode override and Preserve
+  Swapchain Image Count; all of them change live, in the game's page and in
+  the side panel, and a slider is written once it rests. The game's page also
+  has decky-lsfg-vk's workarounds, as plain launch-option variables read back
+  from the field: base FPS cap (DXVK_FRAME_RATE), Gamescope WSI off and HDR
+  off (both on by default), Steam Deck mode off, vkBasalt off and Zink for
+  OpenGL games. A game decky-lsfg-vk's ~/.lsfg wrapper ran leaves it when
+  turned on here, its workarounds carried over; the wrapper file itself goes
+  only once no game launches with it and decky-lsfg-vk is not installed.
+- **Frame generation with lsfg-vk.** lsfg-vk (lsfg-vk.dev) runs Lossless
+  Scaling's frame generation as a Vulkan layer, on top of any upscaler and in
+  any game Proton runs. The set-up offers **lsfg-vk 사용** (off by default),
+  and Settings → 받은 파일 installs it any time: the official build from
+  builds.lsfg-vk.dev, unpacked unmodified into ~/.local (2.0.0 checked
+  against its known SHA-256, others taken over verified TLS), with the build
+  server's newer releases said and updated there. Each game's page gets a
+  **프레임 생성 (lsfg-vk)** section: on/off, multiplier (2-4x), flow scale and
+  the lighter model, kept as a profile in ~/.config/lsfg-vk/conf.toml matched
+  by the game's Steam app id and checked by lsfg-vk-cli; turning it on also
+  puts in the launch options ENABLE_GAMESCOPE_WSI=0, which its pacing needs
+  in Game Mode, and LSFGVK_PROFILE naming the profile, so a non-Steam
+  shortcut, whose process may not carry the app id, gets it too; turning it
+  off takes both out. The side panel's 실행 중 tab has the same controls over
+  the running game: multiplier, flow scale and the lighter model change live.
+  Profiles are written the way decky-lsfg-vk writes them, so
+  the two plugins share them; an lsfg-vk installed by something else is used
+  as it is and neither updated nor removed. Lossless Scaling's Steam branch
+  (lsfg-vk) and its lsfg-vk.dll are checked and said when missing. Removing
+  the downloads takes the lsfg-vk the plugin installed, never the
+  configuration.
+
 ## [0.2.1] - 2026-10-30
 
 ### Changed

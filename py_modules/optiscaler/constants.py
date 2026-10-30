@@ -18,13 +18,71 @@ NIGHTLY_ASSET_RE = r"^OptiScaler_v?(?P<version>.+?)_(?P<date>\d{8})\.7z$"
 CHANNEL_BASELINE = "channel-baseline.json"
 CHANNELS = ("nightly", "dropin", "helixsr")
 CHANNEL_LIST_TTL = 10 * 60  # seconds
+# lsfg-vk (https://lsfg-vk.dev, PancakeTAS, CC BY-NC-ND 4.0): Lossless
+# Scaling's frame generation as a Vulkan layer, for any game Proton runs. Its
+# official builds are unpacked unmodified into ~/.local, as its manual install
+# and decky-lsfg-vk do; the build server publishes no checksums, so the ones
+# known are pinned here and any other is taken over verified TLS only.
+LSFG_BUILDS = "https://builds.lsfg-vk.dev/"
+LSFG_RELEASE_RE = r'href="(?P<file>lsfg-vk-(?P<version>[0-9][^"]*?)\.tar\.xz)"[^>]*>[^<]*Latest release \('
+LSFG_SHA256 = {"2.0.0": "08bdbdf373a111022df87dac7aa87e3b564bb841f961552e3ca85fea12b5aa74"}
+# Archive member -> (path under the user's home, mode).
+LSFG_PAYLOAD = {
+    "bin/lsfg-vk-cli": (".local/bin/lsfg-vk-cli", 0o755),
+    "bin/lsfg-vk-ui": (".local/bin/lsfg-vk-ui", 0o755),
+    "lib/liblsfg-vk-layer.so": (".local/lib/liblsfg-vk-layer.so", 0o644),
+    "lib/liblsfg-vk-layer.x86.so": (".local/lib/liblsfg-vk-layer.x86.so", 0o644),
+    "share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json":
+        (".local/share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json", 0o644),
+    "share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.x86.json":
+        (".local/share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.x86.json", 0o644),
+    "share/applications/gay.pancake.lsfg-vk-ui.desktop":
+        (".local/share/applications/gay.pancake.lsfg-vk-ui.desktop", 0o644),
+    "share/icons/hicolor/256x256/apps/gay.pancake.lsfg-vk-ui.png":
+        (".local/share/icons/hicolor/256x256/apps/gay.pancake.lsfg-vk-ui.png", 0o644),
+}
+# What has to be there for the layer to load in 64-bit games.
+LSFG_REQUIRED = ("lib/liblsfg-vk-layer.so",
+                 "share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json")
+# lsfg-vk v1's files, which v2 asks to be gone.
+LSFG_LEGACY = [".local/lib/liblsfg-vk.so", ".local/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json"]
+LSFG_CONFIG = ".config/lsfg-vk/conf.toml"
+LSFG_CLI = ".local/bin/lsfg-vk-cli"
+# Lossless Scaling on Steam, whose "lsfg-vk" branch carries the lsfg-vk.dll
+# the layer reads its frame generation from.
+LOSSLESS_APPID = "993090"
+LOSSLESS_DIR = "Lossless Scaling"
+LOSSLESS_BRANCH = "lsfg-vk"
+LOSSLESS_DLL = "lsfg-vk.dll"
+# A profile's settings, with lsfg-vk's (and decky-lsfg-vk's) defaults. Pacing
+# is vsync, the one decky-lsfg-vk allows, which in Gamescope (Game Mode) needs
+# ENABLE_GAMESCOPE_WSI=0 in the game's launch options.
+LSFG_PROFILE_DEFAULTS = {
+    "pacing_mode": "vsync",
+    "multiplier": 2,
+    "flow_scale": 0.8,
+    "performance_mode": False,
+    "override_present_mode": True,
+    "preserve_swapchain_image_count": False,
+}
+# decky-lsfg-vk's launch wrapper (~/.lsfg %command%) and its per-game
+# workaround state. A game set up here takes the wrapper out of its launch
+# options and its workarounds as plain launch-option variables instead; the
+# wrapper file goes once no game launches with it and decky-lsfg-vk, which
+# keeps it, is not installed.
+LSFG_WRAPPER = ".lsfg"
+LSFG_WRAPPER_MARKER = "# lsfg-vk-wrapper-format:"
+LSFG_WRAPPER_STATE = ".config/lsfg-vk/workarounds.json"
+LSFG_WRAPPER_PATTERN = r"(^|\s)(~|/home/[^/\s]+)/\.lsfg(\s|$)"
+DECKY_PLUGINS = "homebrew/plugins"
+
 # How often the channels are asked whether a newer build is out, for the
 # notice on the main page; Settings can ask at once.
 UPDATE_CHECK_TTL = 6 * 60 * 60  # seconds
 # What "remove downloaded files" removes under the plugin's runtime folder:
 # everything downloaded, nothing the user put there (user-files) and not the
 # compatibility list, which is not a download the set-up makes.
-RUNTIME_DOWNLOADS = ["nightly", "payload", "fsr4-dropin", "helixsr", "optipatcher", "reframework"]
+RUNTIME_DOWNLOADS = ["nightly", "payload", "fsr4-dropin", "helixsr", "optipatcher", "reframework", "lsfg-vk"]
 
 # This plugin's own releases, published by .github/workflows/release.yml. The
 # latest one is compared with the running version, and Decky Loader is handed

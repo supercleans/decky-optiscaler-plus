@@ -8,7 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import (autoplan, compat, dropin, helixsr, hlx, hlxbuild, installer, jobs, monitor,
+from . import (autoplan, compat, dropin, helixsr, hlx, hlxbuild, installer, jobs, lsfgvk, monitor,
                reframework, steam)
 from .constants import (
     CHANNEL_BASELINE,
@@ -1663,12 +1663,15 @@ class OptiScalerService:
             entry["pinned"] = self.pinned(channel)
             entry.update(self._update_for(channel, entry["installed"], desktop)
                          if entry["used"] else {"latest": None, "update": False})
+        lsfg = self._lsfg_component()
         return {
             "setup_done": bool(self.settings.get("setup_done")),
             "job": self.job.status(),
             "build": self.hlx_build.status(),
             "channels": channels,
-            "updates": [channel for channel, entry in channels.items() if entry["update"]],
+            "lsfgvk": lsfg,
+            "updates": [channel for channel, entry in channels.items() if entry["update"]]
+                       + (["lsfgvk"] if lsfg["update"] else []),
             "checked_at": self._updates_checked_at,
             "update_error": self._update_error,
         }
@@ -1682,6 +1685,8 @@ class OptiScalerService:
         Only asked, nothing downloaded: Settings updates what the user picks.
         """
         listers = {"nightly": self.nightly.releases, "dropin": dropin.releases, "helixsr": hlx.releases}
+        if (self.settings.get("lsfgvk") or {}).get("by_plugin"):
+            listers["lsfgvk"] = lsfgvk.releases
         errors, asked = [], False
         for channel, lister in listers.items():
             if channel == "dropin" and not self._cyboman_used():
@@ -1708,7 +1713,7 @@ class OptiScalerService:
         """
         return bool(self.settings.get("hlx_dlss_enabled") or self.settings.get("helixsr_desktop_seen"))
 
-    async def start_setup(self, build_hlx_dlss=False):
+    async def start_setup(self, build_hlx_dlss=False, install_lsfgvk=False):
         """Download everything installs use, in the background.
 
         OptiScaler's nightly, cyboman's builds (where this machine can pick
@@ -1717,11 +1722,14 @@ class OptiScalerService:
         which the UI asks with the user's agreement to NVIDIA's licence, and
         can be built from Settings any time after. The plugin is set up once
         the downloads are there; HLX DLSS failing to build is said without
-        holding up the rest.
+        holding up the rest. lsfg-vk is installed with ``install_lsfgvk``, and
+        likewise holds nothing up when it cannot be.
         """
         steps = [("nightly", "OptiScaler nightly"), ("dropin", "cyboman FSR 4.1.2 Lite"),
-                 ("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드")]
-        return await self._start_job("setup", steps, CHANNELS, build_dlss=bool(build_hlx_dlss))
+                 ("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드"),
+                 ("lsfgvk", "lsfg-vk (프레임 생성)")]
+        return await self._start_job("setup", steps, (*CHANNELS, "lsfgvk"),
+                                     build_dlss=bool(build_hlx_dlss), lsfg=bool(install_lsfgvk))
 
     async def update_component(self, channel):
         """Download ``channel``'s newest build (or the pinned one), in the background.
@@ -1729,24 +1737,25 @@ class OptiScalerService:
         HLX DLSS is built again in a new HelixSR release when it is wanted (see
         _dlss_wanted). HelixSR Desktop's HelixSR is that app's to update.
         """
-        if channel not in CHANNELS:
+        if channel not in (*CHANNELS, "lsfgvk"):
             return {"ok": False, "error": f"unknown channel {channel}"}
         if channel == "helixsr" and await self._run(self.helixsr_desktop):
             return {"ok": False, "error": "HelixSR Desktop의 HelixSR를 쓰고 있습니다. "
                                           "HelixSR Desktop에서 업데이트하세요."}
         steps = {"nightly": [("nightly", "OptiScaler nightly")],
                  "dropin": [("dropin", "cyboman FSR 4.1.2 Lite")],
-                 "helixsr": [("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드")]}[channel]
+                 "helixsr": [("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드")],
+                 "lsfgvk": [("lsfgvk", "lsfg-vk (프레임 생성)")]}[channel]
         return await self._start_job("update", steps, [channel], channel,
-                                     build_dlss=await self._run(self._dlss_wanted))
+                                     build_dlss=await self._run(self._dlss_wanted), lsfg=True)
 
-    async def _start_job(self, kind, steps, channels, channel=None, build_dlss=False):
+    async def _start_job(self, kind, steps, channels, channel=None, build_dlss=False, lsfg=False):
         if "helixsr" in channels and self.hlx_build.running:
             return {"ok": False, "error": "HLX DLSS를 빌드하고 있습니다. 끝난 뒤 다시 시도하세요."}
         if not self.job.begin(kind, steps, channel):
             return {"ok": False, "error": "다른 설치나 업데이트가 진행 중입니다."}
         self._job_task = asyncio.get_running_loop().create_task(
-            self._fetch_components(channels, setup=kind == "setup", build_dlss=build_dlss))
+            self._fetch_components(channels, setup=kind == "setup", build_dlss=build_dlss, lsfg=lsfg))
         return {"ok": True, "components": await self.get_components()}
 
     async def _job_step(self, key, work):
@@ -1759,7 +1768,7 @@ class OptiScalerService:
         self.job.step(key, jobs.DONE, result[1] if isinstance(result, tuple) else result)
         return result
 
-    async def _fetch_components(self, channels, setup=False, build_dlss=False):
+    async def _fetch_components(self, channels, setup=False, build_dlss=False, lsfg=False):
         error = None
         try:
             if "nightly" in channels:
@@ -1785,12 +1794,91 @@ class OptiScalerService:
                             await self._job_step("hlx_dlss", lambda: self._build_hlx_job(folder, tag))
                         except Exception:
                             pass  # said in its step: everything but HLX DLSS works without it
+            if "lsfgvk" in channels:
+                if not lsfg:
+                    self.job.step("lsfgvk", jobs.SKIPPED, "쓰지 않음. 설정에서 언제든 설치할 수 있습니다.")
+                elif setup:
+                    try:
+                        await self._job_step("lsfgvk", lambda: self._run(self._fetch_lsfg))
+                    except Exception:
+                        pass  # said in its step: optional, like HLX DLSS
+                else:
+                    await self._job_step("lsfgvk", lambda: self._run(self._fetch_lsfg))
             if setup:
                 await self._run(self.settings.set, "setup_done", True)
         except Exception as exc:
             self.log.exception("setting up the plugin's downloads failed")
             error = str(exc) or type(exc).__name__
         self.job.finish(error)
+
+    def _fetch_lsfg(self):
+        cache = self.runtime_dir / "lsfg-vk"
+        cache.mkdir(parents=True, exist_ok=True)
+        version = lsfgvk.install(self.home, cache, self.log)
+        self.settings.set("lsfgvk", {"version": version, "by_plugin": True})
+        return version
+
+    def _lsfg_component(self):
+        """lsfg-vk on this Deck: whether the layer is there, who put it there, and its update.
+
+        One installed some other way (decky-lsfg-vk, by hand) is used as it is
+        and is not offered updates here: it is that tool's to keep.
+        """
+        record = self.settings.get("lsfgvk") or {}
+        present = lsfgvk.installed(self.home)
+        by_plugin = bool(record.get("by_plugin")) and present
+        _, found = self._channel_lists.get("lsfgvk", (0, None))
+        latest = found[0]["version"] if found else None
+        return {
+            "installed": present, "by_plugin": by_plugin,
+            "version": record.get("version") if by_plugin else None,
+            "latest": latest,
+            "update": bool(by_plugin and latest and latest != record.get("version")),
+            "lossless": lsfgvk.lossless(self.home),
+        }
+
+    # -- frame generation per game (lsfg-vk) -----------------------------
+    def _frame_generation(self, appid):
+        state = {"installed": lsfgvk.installed(self.home), "lossless": lsfgvk.lossless(self.home),
+                 "profile": None, "error": None}
+        try:
+            state["profile"] = lsfgvk.game_profile(self.home, appid) if appid else None
+        except Exception as exc:
+            state["error"] = f"{type(exc).__name__}: {exc}"
+        return state
+
+    async def get_frame_generation(self, appid):
+        """lsfg-vk for one game: installed, Lossless Scaling's state, and the game's profile."""
+        return await self._run(self._frame_generation, str(appid or ""))
+
+    async def set_frame_generation(self, appid, name, settings=None):
+        """Turn lsfg-vk on for a game with ``settings``, or off with None.
+
+        The game's profile in lsfg-vk's own configuration, shared with
+        decky-lsfg-vk. Launch options (ENABLE_GAMESCOPE_WSI=0 for Game Mode,
+        LSFGVK_PROFILE naming the profile) are the UI's to set, as Steam
+        holds them.
+        """
+        if not appid:
+            return {"ok": False, "error": "Steam 앱 ID가 없는 게임에는 lsfg-vk를 켤 수 없습니다."}
+
+        def work():
+            if not lsfgvk.installed(self.home):
+                raise FileNotFoundError("lsfg-vk가 설치되어 있지 않습니다. 설정의 받은 파일에서 설치하세요.")
+            dll = lsfgvk.lossless(self.home).get("dll")
+            lsfgvk.set_game_profile(self.home, appid, name, settings, dll=dll,
+                                    environment=hlxbuild.environment(self.home))
+            return self._frame_generation(str(appid))
+
+        try:
+            return {"ok": True, **await self._run(work)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc) or type(exc).__name__,
+                    **await self._run(self._frame_generation, str(appid))}
+
+    async def release_lsfg_wrapper(self, appid):
+        """A game set up here leaves decky-lsfg-vk's ~/.lsfg: its workarounds, and whether the wrapper went."""
+        return await self._run(lsfgvk.release_wrapper, self.home, str(appid))
 
     async def _fetch_nightly(self):
         await self.ensure_payload(force=True)
@@ -1846,6 +1934,11 @@ class OptiScalerService:
                 self.settings.set("setup_done", False)
                 self.settings.set("helixsr_desktop_seen", False)
                 self.settings.set("hlx_dlss_enabled", False)
+                # lsfg-vk only when the plugin put it there; its configuration,
+                # shared with the user and decky-lsfg-vk, stays.
+                if (self.settings.get("lsfgvk") or {}).get("by_plugin"):
+                    lsfgvk.uninstall(self.home)
+                self.settings.set("lsfgvk", {})
             await self._run(work)
         return {"ok": True, "components": await self.get_components()}
 

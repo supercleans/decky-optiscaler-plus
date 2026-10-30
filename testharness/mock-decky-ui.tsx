@@ -60,6 +60,18 @@ const box = (name: string) =>
               </span>
             ))
           : null}
+        {/* A slider is stepped down or up a step at a time, so a test can move it. */}
+        {typeof rest.value === "number" && rest.onChange && rest.min !== undefined
+          ? (
+              <>
+                <span data-slider-value={String(rest.value)} />
+                <span data-slider-dec onClick={() =>
+                  rest.onChange(Math.max(rest.min, +(rest.value - (rest.step ?? 1)).toFixed(4)))} />
+                <span data-slider-inc onClick={() =>
+                  rest.onChange(Math.min(rest.max, +(rest.value + (rest.step ?? 1)).toFixed(4)))} />
+              </>
+            )
+          : null}
         {/* Same idea for a toggle: ToggleField takes neither onClick nor
             onActivate, so without this there is no way for a test to flip one,
             and a control that cannot be pressed cannot be tested. */}
