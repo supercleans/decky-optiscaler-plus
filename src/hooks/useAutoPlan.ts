@@ -1,0 +1,189 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getAutoPlan, getWikiStatus, setAutoMode } from "../api";
+import type { AutoPlan, Recommendation } from "../types";
+
+/** How long to keep watching for a background refresh, and how often. */
+const WATCH_INTERVAL_MS = 2000;
+const WATCH_ATTEMPTS = 10;
+/**
+ * How long "Checking the OptiScaler wiki…" may stay on screen.
+ *
+ * Every answer is meant to come from cache and arrive in milliseconds, so
+ * anything near this is a fault. It has happened — a detail page that had
+ * never been downloaded was fetched in front of the answer, two URLs deep,
+ * each attempt only starting once the last had timed out — and the tab simply
+ * sat there for ever. The cause is fixed; this is so the symptom cannot come
+ * back whatever the cause.
+ */
+const ANSWER_TIMEOUT_MS = 8000;
+
+/**
+ * The wiki's set-up plan for one game, plus whether the user has asked for it.
+ *
+ * Three surfaces need this — the Setup tab, the Settings tab and the Quick
+ * Access panel — and all three ask the same question of the same game, so it
+ * lives here rather than being fetched three ways. The backend answers from its
+ * wiki cache, so repeating the call is cheap.
+ *
+ * `auto` is deliberately separate from `plan.available`: a plan can exist for a
+ * game whose owner would rather set it up by hand, and switching automatic mode
+ * off must not make the plan disappear from view.
+ *
+ * The answer is always the cached list, which is why it arrives at once even on
+ * a Deck with no route to the wiki. When that cache is old the backend
+ * refreshes it behind the answer, and this then watches for the result: the
+ * list carries a content fingerprint, so "something new arrived" is exactly
+ * "the fingerprint changed", and the plan is quietly rebuilt when it does. A
+ * refresh that brings back the same list — the usual outcome — redraws nothing.
+ */
+export function useAutoPlan(
+  gamePath: string | null,
+  gameName: string | null,
+  enabled = true
+) {
+  const [plan, setPlan] = useState<AutoPlan | null>(null);
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [auto, setAuto] = useState(false);
+  /** The fingerprint of the list this plan was built from, and whether a
+   *  refresh that could change it is running. */
+  const [revision, setRevision] = useState<string | null>(null);
+  const [watching, setWatching] = useState(false);
+  // Reloading must not re-run the effect that reloads.
+  const reload = useRef<(force?: boolean) => Promise<void>>(async () => {});
+  /**
+   * Revisions this hook has already reloaded for.
+   *
+   * The watch reloads when the backend's revision differs from the one this
+   * answer was built with — which assumes the two are comparable, and once
+   * they were not: a pinned wiki entry came back with no revision at all, so
+   * every check said "something changed" and the plan reloaded every two
+   * seconds for ever, flickering. Refusing to reload twice for the same
+   * revision makes that structurally impossible rather than merely fixed.
+   */
+  const reloadedFor = useRef(new Set<string>());
+  /** Which target the current answers belong to, so a refresh is not a load. */
+  const loadedTarget = useRef<string | null>(null);
+
+  const load = useCallback(
+    async (force = false) => {
+      if (!gamePath || !enabled) {
+        setPlan(null);
+        setRecommendation(null);
+        loadedTarget.current = null;
+        return;
+      }
+      if (loadedTarget.current !== gamePath) reloadedFor.current.clear();
+      // Only the first answer for a game is a wait worth showing. A refresh
+      // behind an answer already on screen is not: raising `loading` for one
+      // swaps the whole panel back to "Checking the OptiScaler wiki…" and back
+      // again, which reads as a flicker rather than as an update.
+      const first = loadedTarget.current !== gamePath;
+      if (first) setLoading(true);
+      loadedTarget.current = gamePath;
+      // Stop *showing* the wait, without abandoning the answer: if the call
+      // does come back it is still applied below.
+      const giveUp = window.setTimeout(() => setLoading(false), ANSWER_TIMEOUT_MS);
+      try {
+        // The install folder's name is often the only thing that matches the
+        // wiki, so it is searched alongside the Steam title — the same pair the
+        // Setup tab has always used.
+        const folder = gamePath.split("/").filter(Boolean).pop() ?? gameName ?? "";
+        const result = await getAutoPlan(gameName ?? folder, [folder], force, gamePath);
+        setPlan(result.plan);
+        setRecommendation(result.recommendation);
+        setAuto(Boolean(result.plan.enabled));
+        const meta = result.recommendation?.list_meta;
+        setRevision(meta?.revision ?? null);
+        // Worth watching in two cases: the list behind this answer is old
+        // enough that the backend is refreshing it, or this game's own wiki
+        // page has not been downloaded yet — the answer is then the
+        // compatibility-list row, and the page arriving makes it a better one.
+        setWatching(
+          Boolean(meta?.stale) || Boolean(result.recommendation?.detail_pending)
+        );
+      } catch {
+        // A wiki lookup that fails is not an error the user can act on here;
+        // the Setup tab reports it in full, and everything else simply carries
+        // on without an automatic option.
+        setPlan(null);
+        setRecommendation(null);
+        setWatching(false);
+      } finally {
+        window.clearTimeout(giveUp);
+        setLoading(false);
+      }
+    },
+    [gamePath, gameName, enabled]
+  );
+
+  useEffect(() => {
+    reload.current = load;
+  }, [load]);
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  /**
+   * Watch for the refresh running behind the answer already given.
+   *
+   * Bounded on purpose: a handful of cheap reads of the cached status, and it
+   * stops as soon as the refresh finishes — whether or not it brought anything
+   * new. It is not a poll of the wiki; nothing here goes to the network.
+   */
+  useEffect(() => {
+    if (!watching) return;
+    let live = true;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        attempts += 1;
+        let status;
+        try {
+          status = await getWikiStatus(false);
+        } catch {
+          if (live) setWatching(false);
+          return;
+        }
+        if (!live) return;
+        if (
+          status.revision &&
+          status.revision !== revision &&
+          !reloadedFor.current.has(status.revision)
+        ) {
+          // Something new: rebuild this game's plan from it. `load` sets the
+          // new fingerprint, which ends this watch.
+          reloadedFor.current.add(status.revision);
+          setWatching(false);
+          void reload.current(false);
+          return;
+        }
+        if (!status.revalidating || attempts >= WATCH_ATTEMPTS) setWatching(false);
+      })();
+    }, WATCH_INTERVAL_MS);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [watching, revision]);
+
+  const changeAuto = useCallback(
+    async (value: boolean) => {
+      setAuto(value);
+      if (gamePath) await setAutoMode(gamePath, value);
+    },
+    [gamePath]
+  );
+
+  return {
+    plan,
+    recommendation,
+    loading,
+    auto,
+    setAuto: changeAuto,
+    reload: load,
+    /** True while a background refresh could still change this answer. */
+    refreshing: watching,
+  };
+}

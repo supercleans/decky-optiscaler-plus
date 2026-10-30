@@ -1,0 +1,10 @@
+# FidelityFX libraries and OptiPatcher in test fixtures are binary.
+*.7z binary
+*.asi binary
+*.dll binary
+
+# Generated — see CLAUDE.md. Collapsed in diffs and excluded from language stats.
+py_modules/optiscaler/schema_generated.py linguist-generated=true
+
+# The reference INI is shipped verbatim and parsed byte-for-byte; keep its CRLF.
+*.ini -text

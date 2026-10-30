@@ -1,0 +1,176 @@
+name: Release
+
+# Every push to main is a release: decide the version (scripts/version.py),
+# check and build it, record the version and its CHANGELOG section in a commit,
+# tag it, and publish the zip here, where installed plugins check for updates
+# (constants.PLUGIN_REPO) and Decky's "Install from URL" downloads from. A
+# commit subject containing [skip release] opts out; [minor] or [major] bumps
+# that part instead of the patch number.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part to bump if package.json's version is already released"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+# One release at a time, in push order: two running at once would pick the same
+# version, and the second push of its commit would fail anyway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Markers are read from the commit's subject line only: a body that explains
+  # them (as the commit introducing them did) must not trigger them.
+  decide:
+    name: Should this push be released
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          subject="$(printf '%s\n' "$MESSAGE" | head -n 1)"
+          case "$subject" in
+            # The release commit this workflow pushes is made with GITHUB_TOKEN,
+            # which never starts another workflow; this is a second guard.
+            "Release v"*|*"[skip release]"*) echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "skip=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  release:
+    name: Build and publish
+    needs: decide
+    if: needs.decide.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # every tag, for the version and the notes
+
+      - name: Decide the version
+        id: version
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+          BUMP: ${{ inputs.bump }}
+        run: python3 scripts/version.py next --message "$MESSAGE" --bump "${BUMP:-}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Record it in package.json and CHANGELOG.md
+        run: python3 scripts/version.py apply "${{ steps.version.outputs.version }}"
+
+      # The newest OptiScaler nightly and cyboman FSR 4 build right now: what
+      # Settings lists versions from, as the build this release was made against.
+      # Unreachable, the committed file stands: the list just starts earlier.
+      - name: Record the download channels' newest builds
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/pin_channels.py || echo "::warning::kept the committed channel baseline"
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check generated schema is up to date
+        run: |
+          python3 scripts/generate_schema.py
+          git diff --exit-code -- py_modules/optiscaler/schema_generated.py
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Backend selftest
+        run: python3 scripts/selftest.py
+
+      - name: UI harness
+        run: |
+          set -o pipefail
+          HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
+          grep -q "React errors/warnings: 0" harness.log
+
+      # scripts/package.py mirrors the layout `decky plugin build` produces: one
+      # top-level folder named after plugin.json's "name", runtime files only.
+      - name: Package
+        id: asset
+        run: |
+          python3 scripts/package.py
+          asset="out/Decky-Upscaler-Manager-${{ steps.version.outputs.tag }}.zip"
+          mv "out/Decky Upscaler Manager.zip" "$asset"
+          echo "path=$asset" >> "$GITHUB_OUTPUT"
+
+      # Only once everything above passed. --atomic: the commit and its tag
+      # land together or not at all, so a push that lost a race to a newer
+      # commit on main leaves no orphan tag behind.
+      - name: Commit and tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json CHANGELOG.md defaults/channel-baseline.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Release $TAG"
+          fi
+          git tag -a "$TAG" -m "Release $TAG"
+          git push --atomic origin "HEAD:${{ github.ref_name }}" "$TAG"
+
+      # The release body is the CHANGELOG entry, so the releases page and the
+      # repository carry the same notes.
+      - name: Release notes
+        run: |
+          python3 scripts/changelog_section.py "${{ steps.version.outputs.version }}" > notes.md
+          {
+            echo
+            echo "---"
+            echo
+            echo "### Install"
+            echo
+            echo "Decky Loader → gear icon → **Developer mode** → **Install Plugin from URL**, and paste:"
+            echo
+            echo '```'
+            echo "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/$(basename '${{ steps.asset.outputs.path }}')"
+            echo '```'
+            echo
+            echo "Or download the zip below and unpack it into \`~/homebrew/plugins/\`."
+          } >> notes.md
+
+      # On the tag pushed above.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ASSET: ${{ steps.asset.outputs.path }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=(--title "$TAG" --notes-file notes.md)
+          if [ "$PRERELEASE" = "true" ]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
+          gh release create "$TAG" --repo "${{ github.repository }}" --verify-tag "${flags[@]}" "$ASSET"

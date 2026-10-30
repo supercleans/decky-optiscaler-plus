@@ -1,0 +1,69 @@
+name: Build
+
+on:
+  push:
+    # Every branch but main: a push to main is built, tested and released by
+    # release.yml, so building it here as well would only do the work twice.
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Every ini write is validated against metadata derived from the comments
+      # in defaults/OptiScaler.reference.ini (a nightly's own OptiScaler.ini).
+      # Regenerating here proves the committed output still matches its source.
+      - name: Check generated schema is up to date
+        run: |
+          python3 scripts/generate_schema.py
+          git diff --exit-code -- py_modules/optiscaler/schema_generated.py
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        run: pnpm build
+
+      # Installs come from a synthetic v10 release and the nightly channel is
+      # driven through a fake transport, so this downloads no OptiScaler.
+      - name: Backend selftest
+        run: python3 scripts/selftest.py
+
+      # The harnesses assert by printing; "React errors/warnings: 0" is the pass
+      # condition, so the output is checked rather than the exit code.
+      - name: UI harness
+        run: |
+          set -o pipefail
+          HARNESS=run.tsx node testharness/build-and-run.mjs 2>&1 | tee harness.log
+          grep -q "React errors/warnings: 0" harness.log
+
+      - name: Package
+        run: python3 scripts/package.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: decky-upscaler-manager-${{ github.sha }}
+          path: out/*.zip
+          if-no-files-found: error

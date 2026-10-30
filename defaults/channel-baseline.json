@@ -1,0 +1,14 @@
+{
+  "nightly": {
+    "tag": "nightly-20261029",
+    "published_at": "2026-10-29T10:47:43Z"
+  },
+  "dropin": {
+    "tag": "dll-2026-10-29",
+    "published_at": "2026-10-29T17:27:38Z"
+  },
+  "helixsr": {
+    "tag": "v3.2.0",
+    "published_at": "2026-10-29T04:58:31Z"
+  }
+}
