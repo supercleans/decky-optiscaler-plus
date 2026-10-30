@@ -7,6 +7,8 @@ Decky OptiScaler plugin this one grew out of, which bundled **OptiScaler
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Changed
 
 - **Renamed to Decky Upscaler Manager** (was Decky OptiScaler Plus), as it now
