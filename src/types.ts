@@ -134,6 +134,8 @@ export interface ComponentChannel {
   desktop_version?: string | null;
   desktop_root?: string | null;
   dlss_ready?: boolean;
+  /** HLX DLSS is wanted with the plugin's HelixSR: a HelixSR update builds it again. */
+  dlss_enabled?: boolean;
   /** HelixSR Desktop's HelixSR was used here and is gone. */
   desktop_missing?: boolean;
 }

@@ -1,4 +1,12 @@
-import { ButtonItem, ConfirmModal, Field, PanelSection, PanelSectionRow, showModal } from "@decky/ui";
+import {
+  ButtonItem,
+  ConfirmModal,
+  Field,
+  PanelSection,
+  PanelSectionRow,
+  showModal,
+  ToggleField,
+} from "@decky/ui";
 import { toaster } from "@decky/api";
 import { useState } from "react";
 import { removeDownloads, startSetup, updateComponent } from "../api";
@@ -21,32 +29,35 @@ const STEP_LABEL: Record<JobStep["state"], string> = {
   skipped: "건너뜀",
 };
 
-/** What the set-up downloads and builds, agreed to before it starts. */
+/** What the set-up downloads, and builds when asked, agreed to before it starts. */
 function SetupConsent({
   desktop,
+  dlss,
   closeModal,
   onOK,
-}: Readonly<{ desktop: boolean; closeModal?: () => void; onOK: () => void }>) {
+}: Readonly<{ desktop: boolean; dlss: boolean; closeModal?: () => void; onOK: () => void }>) {
   return (
     <ConfirmModal
       strTitle="필요한 파일을 설치할까요?"
-      strOKButtonText={desktop ? "설치" : "동의하고 설치"}
+      strOKButtonText={dlss ? "동의하고 설치" : "설치"}
       strCancelButtonText="취소"
       closeModal={closeModal}
       onOK={onOK}
     >
       <div style={{ fontSize: "14px", lineHeight: 1.5 }}>
-        OptiScaler nightly, cyboman의 FSR 4.1.2 Lite 빌드
+        OptiScaler nightly와 cyboman의 FSR 4.1.2 Lite 빌드를 받습니다.{" "}
         {desktop
-          ? "를 받습니다. HelixSR는 HelixSR Desktop이 설정해 둔 것을 씁니다."
-          : <>
-              , HelixSR 공식 릴리스를 받고, HelixSR 공식 설정 스크립트로 이 기기에서 HLX DLSS를
-              빌드합니다. 빌드에는 NVIDIA의 DLSS DLL(<Mono>nvngx_dlss.dll</Mono>)을 NVIDIA GitHub에서
-              받아 한 번 쓰고 지웁니다. 이 DLL과 빌드 결과는 NVIDIA의 것으로 NVIDIA
-              라이선스(<Mono>github.com/NVIDIA/DLSS</Mono>)를 따르며, 이 기기에서만 쓰고 공유하면 안
-              됩니다. 수백 MB를 받고 몇 분 이상 걸리며, HLX DLSS 빌드에는 Proton이 필요합니다.
-            </>}{" "}
-        이 화면을 닫아도 설치는 계속됩니다.
+          ? "HelixSR는 HelixSR Desktop이 설정해 둔 것을 씁니다."
+          : "HLX FSR 4를 쓰도록 HelixSR 공식 릴리스도 받습니다."}{" "}
+        {dlss ? (
+          <>
+            그리고 HelixSR 공식 설정 스크립트로 이 기기에서 HLX DLSS를 빌드합니다. 빌드에는 NVIDIA의
+            DLSS DLL(<Mono>nvngx_dlss.dll</Mono>)을 NVIDIA GitHub에서 받아 한 번 쓰고 지웁니다. 이 DLL과
+            빌드 결과는 NVIDIA의 것으로 NVIDIA 라이선스(<Mono>github.com/NVIDIA/DLSS</Mono>)를 따르며,
+            이 기기에서만 쓰고 공유하면 안 됩니다. 빌드에는 몇 분 이상 걸리고 Proton이 필요합니다.{" "}
+          </>
+        ) : null}
+        수백 MB를 받으며, 이 화면을 닫아도 설치는 계속됩니다.
       </div>
     </ConfirmModal>
   );
@@ -91,6 +102,8 @@ export function JobSteps({ job, build }: Readonly<{ job: JobStatus; build: HlxBu
 export function SetupPanel() {
   const { components } = useComponents();
   const [starting, setStarting] = useState(false);
+  // HLX DLSS is built only when asked: it takes NVIDIA's DLL, Proton and minutes.
+  const [dlss, setDlss] = useState(false);
   if (!components) return <Centered>확인 중…</Centered>;
   const job = components.job;
   const settingUp = job.running && job.kind === "setup";
@@ -100,7 +113,7 @@ export function SetupPanel() {
   const begin = async () => {
     setStarting(true);
     try {
-      const result = await startSetup();
+      const result = await startSetup(dlss && !desktop);
       if (!result.ok) toaster.toast({ title: "설치를 시작하지 못했습니다", body: String(result.error) });
       publishComponents(result.components);
     } catch (exc) {
@@ -115,11 +128,25 @@ export function SetupPanel() {
       <PanelSectionRow>
         <Notice tone="info" title="먼저 필요한 파일을 설치하세요">
           게임에 넣을 파일을 모두 받아 둡니다: OptiScaler nightly, cyboman의 FSR 4.1.2 Lite 빌드,
-          HelixSR(HLX FSR 4). HLX DLSS는 HelixSR 공식 설정으로 이 기기에서 빌드합니다. HelixSR
-          Desktop으로 설정해 둔 HelixSR가 있으면 그것을 씁니다. 설치가 끝나면 게임을 설정할 수
-          있습니다.
+          HelixSR(HLX FSR 4). HelixSR Desktop으로 설정해 둔 HelixSR가 있으면 그것을 씁니다. 설치가
+          끝나면 게임을 설정할 수 있습니다.
         </Notice>
       </PanelSectionRow>
+      {!desktop ? (
+        <PanelSectionRow>
+          <ToggleField
+            label="HLX DLSS 사용"
+            description={
+              "NVIDIA DLSS 신경망을 HelixSR 공식 설정으로 이 기기에서 빌드합니다. NVIDIA 파일을 받고 " +
+              "Proton이 필요하며 몇 분 이상 걸립니다. 끄고 설치해도 설정에서 언제든 빌드할 수 있습니다."
+            }
+            checked={dlss}
+            disabled={settingUp || starting}
+            bottomSeparator="standard"
+            onChange={setDlss}
+          />
+        </PanelSectionRow>
+      ) : null}
       {job.kind === "setup" ? <JobSteps job={job} build={components.build} /> : null}
       {failed ? (
         <PanelSectionRow>
@@ -132,7 +159,9 @@ export function SetupPanel() {
         <ButtonItem
           layout="below"
           disabled={settingUp || starting}
-          onClick={() => showModal(<SetupConsent desktop={desktop} onOK={() => void begin()} />)}
+          onClick={() =>
+            showModal(<SetupConsent desktop={desktop} dlss={dlss && !desktop} onOK={() => void begin()} />)
+          }
         >
           {settingUp ? "설치 중…" : failed ? "다시 시도" : "설치"}
         </ButtonItem>
@@ -220,9 +249,10 @@ export function ComponentsSection() {
       setWorking(false);
     }
   };
-  // HelixSR is built again in the new release, which hands NVIDIA's DLL over.
+  // HLX DLSS, when wanted, is built again in the new release, which hands NVIDIA's DLL over.
+  const rebuilds = Boolean(channels.helixsr.dlss_enabled || channels.helixsr.desktop_missing);
   const update = (channel: Channel) =>
-    channel === "helixsr"
+    channel === "helixsr" && rebuilds
       ? showModal(<HlxBuildConsent onOK={() => void run(channel)} />)
       : void run(channel);
 

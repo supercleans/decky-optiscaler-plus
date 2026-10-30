@@ -2057,6 +2057,15 @@ async function render(name: string, element: React.ReactElement) {
       && findAll(fresh.host, '[data-mock="ButtonItem"]').some((n) => n.textContent === "설치")}`);
     console.log(`  and opening the page downloads nothing: ${
       calls.filter((c) => c === "start_setup").length === before}`);
+    const dlssToggle = findAll(fresh.host, '[data-mock="ToggleField"]').find((n) =>
+      n.getAttribute("data-label") === "HLX DLSS 사용");
+    console.log(`  HLX DLSS is offered as a choice, off unless turned on, buildable later: ${
+      dlssToggle?.querySelector("[data-toggle]")?.getAttribute("data-checked") === "false"
+      && dlssToggle.textContent!.includes("설정에서 언제든 빌드할 수 있습니다")}`);
+    await act(async () => { (dlssToggle?.querySelector("[data-toggle]") as HTMLElement | null)?.click(); });
+    await settle();
+    console.log(`  and turns on with a press: ${
+      dlssToggle?.querySelector("[data-toggle]")?.getAttribute("data-checked") === "true"}`);
     const freshPanel = await render("QuickPanel (not set up)",
       <QuickPanel runningGame={null} onOpenManager={() => {}} />);
     console.log(`  so does the side panel: ${

@@ -7,6 +7,16 @@ Decky OptiScaler plugin this one grew out of, which bundled **OptiScaler
 
 ## [Unreleased]
 
+### Changed
+
+- **HLX DLSS is built only when asked.** The set-up shows **HLX DLSS 사용**,
+  off by default, when HelixSR Desktop has not set HelixSR up: left off, it
+  downloads everything else and skips the build, and NVIDIA's licence is not
+  asked about. HLX DLSS can be built any time from Settings (or the upscaler
+  list), and once built is built again with every HelixSR update; a HelixSR
+  update without it builds nothing. A HelixSR Desktop set-up that has gone is
+  replaced with HLX DLSS built, as it had it.
+
 ## [0.2.0] - 2026-10-30
 
 ### Changed

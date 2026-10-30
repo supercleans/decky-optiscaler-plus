@@ -137,7 +137,8 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
 **처음 설치 화면** (설치 전에만)
 
 - 사이드 패널과 전체 화면 모두 **설치** 버튼만 보입니다. 누르면 동의 창 뒤에 OptiScaler nightly,
-  cyboman FSR 4.1.2 Lite(BC-250은 건너뜀), HelixSR를 받고 HLX DLSS를 빌드합니다.
+  cyboman FSR 4.1.2 Lite(BC-250은 건너뜀), HelixSR를 받습니다. **HLX DLSS 사용**을 켰을 때만(기본
+  꺼짐) HLX DLSS도 빌드합니다.
 - 단계마다 대기·진행 중·완료·실패·건너뜀이 표시되고, HLX DLSS 빌드는 진행률(%)도 보입니다. 실패하면
   사유와 **다시 시도**가 나옵니다.
 
@@ -214,20 +215,24 @@ OptiScaler는 [nightly 채널](https://github.com/optiscaler/OptiScaler-nightly/
 
 - OptiScaler nightly
 - cyboman의 FSR 4.1.2 Lite exact·lossy (BC-250에서는 쓰지 않으므로 받지 않음)
-- HelixSR 공식 릴리스(HLX FSR 4)를 받고, HelixSR 공식 설정 스크립트로 HLX DLSS 빌드. 빌드 전에
-  NVIDIA 라이선스 동의를 받습니다. HelixSR Desktop으로 설정한 HelixSR가 있으면 받지도 빌드하지도
-  않고 그것을 씁니다.
+- HelixSR 공식 릴리스(HLX FSR 4)
+- HLX DLSS: **HLX DLSS 사용**을 켰을 때만(기본 꺼짐) HelixSR 공식 설정 스크립트로 빌드합니다. 빌드
+  전에 NVIDIA 라이선스 동의를 받고, 몇 분 이상 걸리며 Proton이 필요합니다. 꺼 두고 설치해도 설정의
+  **HLX DLSS 빌드**나 업스케일러 목록에서 언제든 빌드할 수 있습니다.
 
-수백 MB를 받고 몇 분 이상 걸리며, 화면을 닫아도 계속됩니다. 받기가 끝나면 게임을 설정할 수
-있습니다. HLX DLSS 빌드만 실패하면(Proton이 없는 경우 등) 나머지는 그대로 쓸 수 있고, 설정에서 다시
-빌드할 수 있습니다. 이후 게임 설치는 받아 둔 파일만 쓰므로 인터넷 연결이 필요 없습니다.
+HelixSR Desktop으로 설정한 HelixSR가 있으면 HelixSR는 받지도 빌드하지도 않고 그것을 씁니다(이때는
+HLX DLSS 선택이 나오지 않음).
+
+수백 MB를 받으며, 화면을 닫아도 계속됩니다. 받기가 끝나면 게임을 설정할 수 있습니다. HLX DLSS
+빌드만 실패하면(Proton이 없는 경우 등) 나머지는 그대로 쓸 수 있고, 설정에서 다시 빌드할 수 있습니다.
+이후 게임 설치는 받아 둔 파일만 쓰므로 인터넷 연결이 필요 없습니다.
 
 ### 업데이트와 지우기
 
 OptiScaler nightly, cyboman 빌드, HelixSR에 새 빌드가 나오면 메인 화면에 알려 줍니다(몇 시간마다
 확인). **설정 → 받은 파일**에서 각각 업데이트하고, **새 빌드 확인**으로 바로 확인할 수 있습니다.
-HelixSR를 업데이트하면 새 릴리스에서 HLX DLSS를 다시 빌드합니다. 이미 설치한 게임은 설정의 **게임
-업데이트**로 새 빌드를 넣습니다.
+HLX DLSS를 빌드해 쓰고 있으면 HelixSR를 업데이트할 때 새 릴리스에서 다시 빌드합니다. 이미 설치한
+게임은 설정의 **게임 업데이트**로 새 빌드를 넣습니다.
 
 **받은 파일 모두 지우기**는 플러그인이 받은 파일(OptiScaler, cyboman, HelixSR, OptiPatcher,
 REFramework)을 모두 지우고 처음 설치 화면으로 돌아갑니다. 게임에 설치한 파일은 그대로 둡니다.

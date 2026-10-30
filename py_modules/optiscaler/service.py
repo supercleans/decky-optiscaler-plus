@@ -1569,6 +1569,7 @@ class OptiScalerService:
                                           self.target_tag("helixsr"))
             await self._run(self._set_installed, "helixsr", tag)
             await self._run(self._build_hlx_in, folder, tag)
+            await self._run(self.settings.set, "hlx_dlss_enabled", True)
         except Exception as exc:
             self.log.exception("HLX DLSS build failed")
             error = str(exc) or type(exc).__name__
@@ -1653,6 +1654,8 @@ class OptiScalerService:
                 "desktop_version": desktop.get("version") if desktop else None,
                 "desktop_root": desktop.get("root") if desktop else None,
                 "dlss_ready": bool(build.get("dlss_ready")),
+                # Built here, or asked for: a HelixSR update builds it again.
+                "dlss_enabled": self._dlss_wanted(),
                 "desktop_missing": seen and not desktop and not plugin_ready,
             },
         }
@@ -1696,25 +1699,35 @@ class OptiScalerService:
             self._update_error = "; ".join(errors) or None
         return await self.get_components()
 
-    async def start_setup(self):
-        """Download everything installs use, and build HLX DLSS, in the background.
+    def _dlss_wanted(self):
+        """Whether HLX DLSS is to be built with the plugin's HelixSR.
+
+        Asked for at the set-up or built from Settings since; or used from a
+        HelixSR Desktop set-up that has gone, which the plugin's HelixSR
+        replaces as it was.
+        """
+        return bool(self.settings.get("hlx_dlss_enabled") or self.settings.get("helixsr_desktop_seen"))
+
+    async def start_setup(self, build_hlx_dlss=False):
+        """Download everything installs use, in the background.
 
         OptiScaler's nightly, cyboman's builds (where this machine can pick
-        them) and a HelixSR release with HLX DLSS built in it, unless HelixSR
-        Desktop has set HelixSR up here. The plugin is set up once the
-        downloads are there; HLX DLSS failing to build is said, and can be
-        built again from Settings, without holding up the rest. The UI asks the
-        user to agree to NVIDIA's licence first.
+        them) and a HelixSR release, unless HelixSR Desktop has set HelixSR up
+        here; HLX DLSS is built in that release only with ``build_hlx_dlss``,
+        which the UI asks with the user's agreement to NVIDIA's licence, and
+        can be built from Settings any time after. The plugin is set up once
+        the downloads are there; HLX DLSS failing to build is said without
+        holding up the rest.
         """
         steps = [("nightly", "OptiScaler nightly"), ("dropin", "cyboman FSR 4.1.2 Lite"),
                  ("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드")]
-        return await self._start_job("setup", steps, CHANNELS)
+        return await self._start_job("setup", steps, CHANNELS, build_dlss=bool(build_hlx_dlss))
 
     async def update_component(self, channel):
         """Download ``channel``'s newest build (or the pinned one), in the background.
 
-        HelixSR is built again in the new release. HelixSR Desktop's HelixSR is
-        that app's to update.
+        HLX DLSS is built again in a new HelixSR release when it is wanted (see
+        _dlss_wanted). HelixSR Desktop's HelixSR is that app's to update.
         """
         if channel not in CHANNELS:
             return {"ok": False, "error": f"unknown channel {channel}"}
@@ -1724,15 +1737,16 @@ class OptiScalerService:
         steps = {"nightly": [("nightly", "OptiScaler nightly")],
                  "dropin": [("dropin", "cyboman FSR 4.1.2 Lite")],
                  "helixsr": [("helixsr", "HelixSR (HLX FSR 4)"), ("hlx_dlss", "HLX DLSS 빌드")]}[channel]
-        return await self._start_job("update", steps, [channel], channel)
+        return await self._start_job("update", steps, [channel], channel,
+                                     build_dlss=await self._run(self._dlss_wanted))
 
-    async def _start_job(self, kind, steps, channels, channel=None):
+    async def _start_job(self, kind, steps, channels, channel=None, build_dlss=False):
         if "helixsr" in channels and self.hlx_build.running:
             return {"ok": False, "error": "HLX DLSS를 빌드하고 있습니다. 끝난 뒤 다시 시도하세요."}
         if not self.job.begin(kind, steps, channel):
             return {"ok": False, "error": "다른 설치나 업데이트가 진행 중입니다."}
         self._job_task = asyncio.get_running_loop().create_task(
-            self._fetch_components(channels, setup=kind == "setup"))
+            self._fetch_components(channels, setup=kind == "setup", build_dlss=build_dlss))
         return {"ok": True, "components": await self.get_components()}
 
     async def _job_step(self, key, work):
@@ -1745,7 +1759,7 @@ class OptiScalerService:
         self.job.step(key, jobs.DONE, result[1] if isinstance(result, tuple) else result)
         return result
 
-    async def _fetch_components(self, channels, setup=False):
+    async def _fetch_components(self, channels, setup=False, build_dlss=False):
         error = None
         try:
             if "nightly" in channels:
@@ -1763,10 +1777,14 @@ class OptiScalerService:
                     self.job.step("hlx_dlss", jobs.SKIPPED, detail)
                 else:
                     folder, tag = await self._job_step("helixsr", lambda: self._run(self._fetch_helixsr))
-                    try:
-                        await self._job_step("hlx_dlss", lambda: self._build_hlx_job(folder, tag))
-                    except Exception:
-                        pass  # said in its step: everything but HLX DLSS works without it
+                    if not build_dlss:
+                        self.job.step("hlx_dlss", jobs.SKIPPED,
+                                      "쓰지 않음. 설정에서 언제든 빌드할 수 있습니다.")
+                    else:
+                        try:
+                            await self._job_step("hlx_dlss", lambda: self._build_hlx_job(folder, tag))
+                        except Exception:
+                            pass  # said in its step: everything but HLX DLSS works without it
             if setup:
                 await self._run(self.settings.set, "setup_done", True)
         except Exception as exc:
@@ -1806,6 +1824,7 @@ class OptiScalerService:
         self.hlx_build.finish(error)
         if error:
             raise RuntimeError(error)
+        await self._run(self.settings.set, "hlx_dlss_enabled", True)
         return tag
 
     async def remove_downloads(self):
@@ -1826,6 +1845,7 @@ class OptiScalerService:
                 self.settings.set("installed", {})
                 self.settings.set("setup_done", False)
                 self.settings.set("helixsr_desktop_seen", False)
+                self.settings.set("hlx_dlss_enabled", False)
             await self._run(work)
         return {"ok": True, "components": await self.get_components()}
 

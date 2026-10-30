@@ -170,8 +170,8 @@ export const getComponents = callable<[], ComponentsStatus>("get_components");
 /** The same, after asking the channels for newer builds (every few hours, or now with force). */
 export const checkUpdates = callable<[force?: boolean], ComponentsStatus>("check_updates");
 type JobStart = { ok: boolean; error?: string; components?: ComponentsStatus };
-/** Download everything and build HLX DLSS, once the user agreed to NVIDIA's licence. */
-export const startSetup = callable<[], JobStart>("start_setup");
+/** Download everything; build HLX DLSS too when asked, once the user agreed to NVIDIA's licence. */
+export const startSetup = callable<[buildHlxDlss?: boolean], JobStart>("start_setup");
 export const updateComponent = callable<[channel: Channel], JobStart>("update_component");
 /** Remove everything downloaded; games keep what is installed in them. */
 export const removeDownloads = callable<[], JobStart>("remove_downloads");

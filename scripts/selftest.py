@@ -3331,8 +3331,9 @@ def check_setup():
     """The plugin's own set-up, its updates, HelixSR Desktop, and removing it all.
 
     Nothing is offered until the set-up has downloaded OptiScaler's nightly,
-    cyboman's builds and a HelixSR release with HLX DLSS built in it; HLX DLSS
-    failing to build does not hold the rest up, a download failing does. A
+    cyboman's builds and a HelixSR release; HLX DLSS is built in it only when
+    asked (and from then on with every HelixSR update), and failing to build
+    does not hold the rest up, a download failing does. A
     HelixSR Desktop set-up is used instead of a download, its updates are only
     said, and its going away is said too. Installs then use what was set up,
     without the network; newer builds are only looked for, and updated from
@@ -3407,7 +3408,7 @@ def check_setup():
               before["channels"])
 
         async def twice():
-            first = await service.start_setup()
+            first = await service.start_setup(True)
             second = await service.start_setup()
             await service._job_task
             return first, second, await service.get_components()
@@ -3415,7 +3416,7 @@ def check_setup():
         first, second, after = asyncio.run(twice())
         steps = {s["key"]: s["state"] for s in after["job"]["steps"]}
         check("the set-up runs once at a time", first["ok"] and not second["ok"], second)
-        check("and downloads OptiScaler, both cyboman builds and HelixSR, and builds HLX DLSS",
+        check("and downloads OptiScaler, both cyboman builds and HelixSR, and builds HLX DLSS when asked",
               after["setup_done"] and after["job"]["ok"]
               and steps == {"nightly": "done", "dropin": "done", "helixsr": "done", "hlx_dlss": "done"}
               and sorted(v for v, _ in calls["dropin"]) == ["4.1.2l-exact", "4.1.2l-lossy"]
@@ -3462,10 +3463,35 @@ def check_setup():
         fail["dropin"] = False
         newest["dropin"] = "dll-2099-01-02"
 
+        # HLX DLSS is not built unless asked for, nor by a HelixSR update then.
+        calls["build"].clear()
+        optout_service = fake_service("optout")
+        _, optout = asyncio.run(until_done(optout_service, optout_service.start_setup()))
+        steps = {s["key"]: (s["state"], s["detail"]) for s in optout["job"]["steps"]}
+        check("left off, the set-up downloads everything but builds no HLX DLSS",
+              optout["setup_done"] and steps["helixsr"][0] == "done" and steps["hlx_dlss"][0] == "skipped"
+              and "설정에서" in steps["hlx_dlss"][1] and not calls["build"]
+              and not optout["channels"]["helixsr"]["dlss_ready"]
+              and not optout["channels"]["helixsr"]["dlss_enabled"], (steps, calls["build"]))
+        _, refreshed = asyncio.run(until_done(optout_service, optout_service.update_component("helixsr")))
+        check("and a HelixSR update does not build it either",
+              not calls["build"] and {s["key"]: s["state"] for s in refreshed["job"]["steps"]}["hlx_dlss"]
+              == "skipped", refreshed["job"]["steps"])
+
+        async def build_now():
+            await optout_service.build_hlx_dlss()
+            await optout_service._hlx_build_task
+            return await optout_service.get_components()
+
+        wanted = asyncio.run(build_now())
+        check("built from Settings later, it is wanted from then on",
+              calls["build"] == ["v3.2.1"] and wanted["channels"]["helixsr"]["dlss_ready"]
+              and wanted["channels"]["helixsr"]["dlss_enabled"], wanted["channels"]["helixsr"])
+
         # HLX DLSS failing to build holds nothing up; a download failing does.
         fail["build"] = True
         unbuilt_service = fake_service("unbuilt")
-        _, unbuilt = asyncio.run(until_done(unbuilt_service, unbuilt_service.start_setup()))
+        _, unbuilt = asyncio.run(until_done(unbuilt_service, unbuilt_service.start_setup(True)))
         steps = {s["key"]: (s["state"], s["detail"]) for s in unbuilt["job"]["steps"]}
         check("HLX DLSS failing to build is said, and the plugin is set up all the same",
               unbuilt["setup_done"] and unbuilt["job"]["ok"] and steps["hlx_dlss"][0] == "failed"
@@ -3525,7 +3551,9 @@ def check_setup():
               and not any((service.runtime_dir / n).exists()
                           for n in ("payload", "fsr4-dropin", "helixsr", "optipatcher", "reframework"))
               and not tools.exists() and (game / "OptiScaler").is_dir()
-              and service.installed_tag("dropin") is None, removed["components"]["channels"])
+              and service.installed_tag("dropin") is None
+              and not removed["components"]["channels"]["helixsr"]["dlss_enabled"],
+              removed["components"]["channels"])
         kept_tools = desktop_home / ".local/share/HelixSR/python"
         kept_tools.mkdir(parents=True)
         (desktop_home / ".local/share/HelixSR-Desktop").mkdir(parents=True)

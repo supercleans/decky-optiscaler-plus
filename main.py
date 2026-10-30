@@ -145,9 +145,9 @@ class Plugin:
     async def check_updates(self, force: bool = False) -> dict:
         return await self.service.check_updates(force)
 
-    async def start_setup(self) -> dict:
-        """Download everything and build HLX DLSS; the user agreed to NVIDIA's licence."""
-        return await self.service.start_setup()
+    async def start_setup(self, build_hlx_dlss: bool = False) -> dict:
+        """Download everything, and build HLX DLSS when the user asked and agreed to NVIDIA's licence."""
+        return await self.service.start_setup(build_hlx_dlss)
 
     async def update_component(self, channel: str) -> dict:
         return await self.service.update_component(channel)
