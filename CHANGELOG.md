@@ -7,6 +7,8 @@ Decky OptiScaler plugin this one grew out of, which bundled **OptiScaler
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-30
+
 ### Added
 
 - **lsfg-vk's controls as decky-lsfg-vk has them, without its wrapper.** The

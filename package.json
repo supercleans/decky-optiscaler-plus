@@ -1,6 +1,6 @@
 {
   "name": "decky-upscaler-manager",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Pick an upscaler per game from the Steam Deck UI - OptiScaler with FSR 4 Lite, cyboman's FSR 4.1.2 Lite builds, HelixSR's HLX FSR 4 and HLX DLSS - install it, keep it updated, and monitor it.",
   "type": "module",
   "scripts": {
